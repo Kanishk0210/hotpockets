@@ -7,10 +7,10 @@ from fastapi import FastAPI, APIRouter, Body, Depends
 from starlette.middleware.cors import CORSMiddleware
 from starlette.responses import JSONResponse
 
-import uvicorn
+# import uvicorn
 
 from database import firebase_conn as fs_db
-from services import game
+from services import game, daily_collect
 from models.Player import Player
 from models.Game import Game
 from models.Employee import Employee
@@ -20,6 +20,7 @@ from models.Menu import Menu
 from models.UserLoginSchema import UserLoginSchema
 from models.GameTracker import GameTracker, GameTrackerEndRequest
 from models.CanteenTracker import CanteenTracker
+from models.DailyCollect import DailyCollect
 from util import util, constants
 # from auth import auth_bearer, auth_handler
 from auth.auth_bearer import JWTBearer
@@ -30,13 +31,14 @@ app = FastAPI()
 # authb = auth_bearer()
 
 origins = [
-    "http://localhost:3000"
+    "http://localhost:3000",
+    "https://hot-pocket-47985.web.app"
 ]
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins = origins,
-    allow_methods = ["*"],
+    allow_methods = ["GET","POST","PUT","DELETE"],
     allow_headers = ["*"]
 )
 
@@ -57,6 +59,14 @@ def user_login(user: UserLoginSchema = Body(...)):
     return {
         "error": "Wrong login details!"
     }
+
+@app.delete("/delete/{doc_id}")
+def delete_target(doc_id: str):
+    isDeleted = fs_db.delete_target(doc_id)
+    
+    if not isDeleted:
+        JSONResponse(content='Failed to Delete.', status_code=500)
+    return JSONResponse(content='Successfully Deleted.', status_code=200)
 
 @app.get("/players")
 def get_players():
@@ -139,11 +149,22 @@ def get_invs():
 def add_raw(rawMtrl: RawMtrl):
     #chars = string.ascii_letters + string.digits
     # doc_id = 'Player::'+ player.name[:3].upper()+'_'+player.phone[-4:]+'_'+''.join(random.choices(chars, k=4)) # Player::ASH_6891_oWtp
-    isAdded = fs_db.add(constants.RAWMTRL, rawMtrl.dict())
+    rm_dict = rawMtrl.dict()
+    if rm_dict.get("CostPerBox",None) is not None:
+        rm_dict["CostPerItem"] = rm_dict["CostPerBox"]//rm_dict["QuantityPerBox"]
+        rm_dict["Quantity"] = rm_dict["QuantityBox"]*rm_dict["QuantityPerBox"]
+    isAdded, doc = fs_db.add(constants.RAWMTRL, rm_dict)
 
     if not isAdded:
         JSONResponse(content='Failed to Add Raw Material.', status_code=500)
-    return JSONResponse(content='Successfully added Raw Material.', status_code=201)
+    return JSONResponse(content=doc, status_code=201)
+
+@app.put("/rawMtrl/update/{doc_id}")
+def update_raw(doc_id: str, doc: dict):
+    isUpdated = fs_db.update_rawmtrl(doc_id, doc)
+    if not isUpdated:
+        JSONResponse(content='Failed to Update.', status_code=500)
+    return JSONResponse(content='Successfully Updated.', status_code=200)
 
 @app.get("/rawMtrls")
 def get_raw_mtrls():
@@ -159,6 +180,7 @@ def get_raw_mtrls():
 def add_menu_item(menu: Menu):
     #chars = string.ascii_letters + string.digits
     # doc_id = 'Player::'+ player.name[:3].upper()+'_'+player.phone[-4:]+'_'+''.join(random.choices(chars, k=4)) # Player::ASH_6891_oWtp
+    menu.Remaining = fs_db.get_remaining_stock(menu.dict())
     isAdded = fs_db.add(constants.MENU, menu.dict())
 
     if not isAdded:
@@ -189,6 +211,47 @@ def update(doc_id: str, doc: dict):
 @app.put("/trans/update/{doc_id}")
 def update_trans(doc_id: str, doc: dict):
     print(doc_id)
+    
+    # if game tracker update
+    if constants.GAME_TRACKER in doc_id:
+        gt_doc = fs_db.get_by_id_trans(doc_id)
+        if gt_doc.get("isActive"):
+            if gt_doc.get("Players",[]) is None:
+                gt_plyrs = []
+            else:
+                gt_plyrs = gt_doc.get("Players",[])
+            del_plyrs = [plyr for plyr in gt_plyrs if plyr not in doc.get("Players",[])]
+
+            # update player not playing
+            for plyr_upd in del_plyrs:
+                fs_db.update_target(plyr_upd["Id"], {"isPlaying": False})
+            # update player playing
+            if doc["Players"] is not None:
+                for player in doc["Players"]:
+                    fs_db.update_target(player["Id"], {"isPlaying": True})
+
+    # if canteen tracker update
+    if constants.CANTEEN_TRACKER in doc_id:
+        # update Cost
+        cost = 0
+        players = doc["Players"]
+        if players is not None:
+            for player in players:
+                player["Cost"] = 0
+                menus = player["MenuItems"]
+                if menus is not None:
+                    for menu in menus:
+                        player["Cost"] += menu["Cost"] * menu["Quan"]
+                        cost += menu["Cost"] * menu["Quan"]
+        doc["Players"] = players
+
+        menus = doc["MenuItems"]
+        
+        if menus is not None:
+            for menu in menus:
+                cost += menu["Cost"]* menu["Quan"]
+        doc["Cost"] = cost
+
     isUpdated = fs_db.update_trans(doc_id, doc)
 
     if not isUpdated:
@@ -241,8 +304,14 @@ def start_game(gt_doc: GameTracker):
 @app.get("/game/generate_bill/{gt_id}")
 def generate_bill(gt_id: str):
     if not game.process_generate_bill(gt_id):
-        return JSONResponse(content='Failed to End Game.', status_code=500)
-    return JSONResponse(content="Game ended successfully.", status_code=200)
+        return JSONResponse(content='Failed to generate bill.', status_code=500)
+    return JSONResponse(content="Bill Generated successfully.", status_code=200)
+
+@app.post("/game/bill/pay/{bt_id}")
+def pay_bill(bt_id:str, modes: dict):
+    if not game.process_pay_bill(bt_id, modes, modes.pop("discount")):
+        return JSONResponse(content='Failed to pay bill.', status_code=500)
+    return JSONResponse(content="Bill Paid.", status_code=200)
 
 @app.post("/game/end")
 def end_game(gt_end: GameTrackerEndRequest):
@@ -254,36 +323,40 @@ def end_game(gt_end: GameTrackerEndRequest):
 def add_canteen(canteen_dict: CanteenTracker):
     #chars = string.ascii_letters + string.digits
     # doc_id = 'Player::'+ player.name[:3].upper()+'_'+player.phone[-4:]+'_'+''.join(random.choices(chars, k=4)) # Player::ASH_6891_oWtp
+    isAdded = False
+    doc = None
+    # check already present
+    gt_doc = fs_db.get_by_id_trans(canteen_dict.GameTrackerId)
+    if gt_doc["CanteenTrackerId"] is None:
+        # update Cost
+        cost = 0
+        players = canteen_dict.Players
+        if players is not None:
+            for player in canteen_dict.Players:
+                player.Cost = 0
+                menus = player.MenuItems
+                if menus is not None:
+                    for menu in menus:
+                        player.Cost += menu.Cost * menu.Quan
+                        cost += menu.Cost * menu.Quan
+        canteen_dict.Players = players
 
-    # update Cost
-    cost = 0
-    players = canteen_dict.Players
-    if players is not None:
-        for player in canteen_dict.Players:
-            player.Cost = 0
-            menus = player.MenuItems
-            if menus is not None:
-                for menu in menus:
-                    player.Cost += menu.Cost * menu.Quan
-                    cost += menu.Cost * menu.Quan
-    canteen_dict.Players = players
-
-    menus = canteen_dict.MenuItems
-    
-    if menus is not None:
-        for menu in canteen_dict.MenuItems:
-            cost += menu.Cost* menu.Quan
-    canteen_dict.Cost = cost
+        menus = canteen_dict.MenuItems
+        
+        if menus is not None:
+            for menu in canteen_dict.MenuItems:
+                cost += menu.Cost* menu.Quan
+        canteen_dict.Cost = cost
 
 
-    isAdded, doc = fs_db.add_trans(constants.CANTEEN_TRACKER, canteen_dict.dict())
+        isAdded, doc = fs_db.add_trans(constants.CANTEEN_TRACKER, canteen_dict.dict())
 
-    # update game tracker with ct id
-    gt_update = {
-            "CanteenTrackerId" : doc['Id']
-        }
+        # update game tracker with ct id
+        gt_update = {
+                "CanteenTrackerId" : doc['Id']
+            }
 
-    fs_db.update_trans(canteen_dict.GameTrackerId, gt_update)
+        fs_db.update_trans(canteen_dict.GameTrackerId, gt_update)
 
     if not isAdded:
         JSONResponse(content='Failed to Add Canteen', status_code=500)
@@ -298,6 +371,13 @@ def update_ct(doc_id: str, doc: dict):
     if not isUpdated:
         JSONResponse(content='Failed to Update.', status_code=500)
     return JSONResponse(content=doc_res, status_code=200)
+
+@app.post("/game/canteen/{gt_id}")
+def add_game_canteen(gt_id: str, doc: dict):
+    isAdded = fs_db.add_game_canteen(gt_id, doc)
+    if not isAdded:
+        JSONResponse(content='Failed to Add.', status_code=500)
+    return JSONResponse(content='Successfully added.', status_code=200)
 
 @app.get("/canteen/track")
 def get_canteen_trackers():
@@ -337,21 +417,21 @@ def update_game(doc_id: str, doc: dict):
 @app.get("/game/bills")
 def get_game_all_bills():
 
-    bt_docs = fs_db.get_all_trans(constants.BILL_TRACKER)
+    bt_docs = fs_db.get_all_plyr_bills(False)
 
-    bt_docs_res = {'BillTrackers':[]}
-    for bt_doc in bt_docs:
-        bt_docs_res['BillTrackers'].append(bt_doc.to_dict())
-    return JSONResponse(content=bt_docs_res, status_code=200)
+    return JSONResponse(content=bt_docs, status_code=200)
 
 @app.get("/game/bills/pending")
 def get_game_all_pending_bills():
+    try:
 
-    bt_docs = fs_db.get_all_pending_bills(constants.BILL_TRACKER)
+        bt_docs = fs_db.get_all_pending_bills(constants.BILL_TRACKER)
 
-    bt_docs_res = {'PendingBillTrackers':[]}
-    for bt_doc in bt_docs:
-        bt_docs_res['PendingBillTrackers'].append(bt_doc.to_dict())
+        bt_docs_res = {'PendingBillTrackers':[]}
+        for bt_doc in bt_docs:
+            bt_docs_res['PendingBillTrackers'].append(bt_doc.to_dict())
+    except Exception as e:
+        print(e)
     return JSONResponse(content=bt_docs_res, status_code=200)
 
 @app.get("/game/closed_not_billed")
@@ -359,8 +439,37 @@ def get_closed_not_billed_games():
     docs = fs_db.get_closed_not_billed_games()
     return JSONResponse(content=docs, status_code=200)
 
+@app.get("/game/bills/paid")
+def get_game_paid_bills():
 
+    bt_docs = fs_db.get_all_plyr_bills(True)
+    return JSONResponse(content=bt_docs, status_code=200)
 
+@app.get("/dailycollections")
+def get_daily_collections():
+    dc_docs = fs_db.get_all_trans(constants.DAILY_COLLECT)
+
+    dc_docs_res = {'DailyCollections':[]}
+    for dc_doc in dc_docs:
+        dc_docs_res['DailyCollections'].append(dc_doc.to_dict())
+    return JSONResponse(content=dc_docs_res, status_code=200)
+
+@app.post("/dailycollect")
+def save_dailycollect(dailyCollect: DailyCollect):
+    isAdded, dc = fs_db.add_dailycollect(dailyCollect.dict())
+    isUpdated = daily_collect.update_safe(dc)
+    if not isAdded:
+        JSONResponse(content='Failed to Add DailyCollect.', status_code=500)
+    if not isUpdated:
+        JSONResponse(content='Failed to Update Safe.', status_code=500)
+    return JSONResponse(content='Successfully added DailyCollect.', status_code=201)
+
+@app.get("/safe")
+def get_safe():
+    safe = fs_db.get_safe()
+    if safe is None:
+        return JSONResponse(content='Document not present in DB.', status_code=500)
+    return JSONResponse(content=safe, status_code=200)
 
 # @app.exception_handler(ValidationError)
 # def validation_exception_handler(request: Request, exc: ValidationError):
@@ -370,9 +479,9 @@ def get_closed_not_billed_games():
 # def http_exception_handler(request: Request, exc: HTTPException):
 #     return JSONResponse(status_code=exc.status_code, content={'Server Error': exc.errors()})
     
-if __name__ == "__main__":
-    # listener = ngrok.forward(8000, authtoken = '2jcb2Za6XtLuFkJ0GoenNZ1cNNo_3GRT9swyPEPZrC1v6wX5A')
-    # print(listener.url())
-    # uvicorn.run("main:app", host=listener.url(), reload= True)
-    uvicorn.run("main:app", port=8000, reload= True)
+# if __name__ == "__main__":
+#     # listener = ngrok.forward(8000, authtoken = '2jcb2Za6XtLuFkJ0GoenNZ1cNNo_3GRT9swyPEPZrC1v6wX5A')
+#     # print(listener.url())
+#     # uvicorn.run("main:app", host=listener.url(), reload= True)
+#     uvicorn.run("main:app", port=8000, reload= True)
 

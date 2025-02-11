@@ -5,7 +5,7 @@ import uuid
 
 class MenuItem(BaseModel):
     Id: str
-    name: str
+    Name: str
     Cost: Union[float, int]
     Quan: Union[float, int]
 

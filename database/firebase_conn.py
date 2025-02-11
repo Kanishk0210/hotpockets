@@ -5,8 +5,11 @@ from firebase_admin import credentials, db, firestore
 from google.cloud.firestore_v1.base_query import FieldFilter
 
 from util import util, constants
+import sys
 
 cred = credentials.Certificate('resources/hotpockets-test-firebase-adminsdk-4gr44-d3d84f282d.json')
+
+#cred = credentials.Certificate('resources/firebasse-adminsdk-prod.json')
 
 firebase_app = firebase_admin.initialize_app(cred)
 
@@ -39,6 +42,26 @@ menu_item_counter_ref = source_coll.document(menu_item_counter_id)
 game_tracker_counter_ref = source_coll.document(game_tracker_counter_id)
 bill_tracker_counter_ref = source_coll.document(bill_tracker_counter_id)
 canteen_tracker_counter_ref = source_coll.document(canteen_tracker_counter_id)
+
+# source
+def add_dailycollect(dc: dict):
+    doc_id = constants.DAILY_COLLECT+'::'+dc.get("CurrentCollectTmstmp")
+    dc[constants.ID] = doc_id
+    dc[constants.MDFDTMSTMP] = dc.get("CurrentCollectTmstmp")
+    dc[constants.CREATEDTMSTMP] = dc.get("CurrentCollectTmstmp")
+    trans_coll.add(dc, doc_id)
+    return True, dc
+
+def get_safe():
+    return source_coll.document(constants.SAFE_ID).get().to_dict()
+
+def update_safe(doc_id: str, doc: dict):
+    doc_ref = source_coll.document(doc_id)
+    
+    doc_ref.update(doc)
+    return True
+
+# target
 
 def get_counter_ref(typ: str):
     if typ == constants.MENU:
@@ -86,12 +109,26 @@ def add(typ: str, doc: dict):
     doc[constants.MDFDTMSTMP] = util.get_current_tmstmp_str()
     doc[constants.CREATEDTMSTMP] = util.get_current_tmstmp_str()
     target_coll.add(doc, doc_id)
-    return True
+    return True, doc
 
 def update(doc_id: str, doc: dict):
     doc_ref = target_coll.document(doc_id)
     doc[constants.MDFDTMSTMP] = util.get_current_tmstmp_str()
     doc_ref.update(doc)
+    return True
+
+def update_rawmtrl(doc_id: str, doc: dict):
+    doc_ref = target_coll.document(doc_id)
+    ex_doc = doc_ref.get().to_dict()
+    ex_doc[constants.MDFDTMSTMP] = util.get_current_tmstmp_str()
+    ex_doc["QuantityBox"] = ex_doc["QuantityBox"] + doc["QuantityBox"]
+    ex_doc["Quantity"] = ex_doc["Quantity"] + doc["QuantityBox"]*ex_doc["QuantityPerBox"]
+    doc_ref.update(ex_doc)
+    return True
+
+def delete_target(doc_id: str):
+    doc_ref = target_coll.document(doc_id)
+    doc_ref.delete()
     return True
 
 # Transaction
@@ -139,6 +176,102 @@ def update_trans(doc_id: str, doc: dict):
     doc[constants.MDFDTMSTMP] = util.get_current_tmstmp_str()
     doc_ref.update(doc)
     return True, doc
+
+def add_game_canteen(gt_id: str, doc: dict):
+    gt_doc_ref = trans_coll.document(gt_id)
+    gt_doc = doc_ref.get().to_dict()
+    isNew = False
+    if gt_doc["CanteenTrackerId"] == None:
+        gt_doc["CanteenTrackerId"] = constants.CANTEEN_TRACKER +'::'+str(get_next_id(typ))
+        ex_ct_doc = {
+            constants.MDFDTMSTMP: util.get_current_tmstmp_str(),
+            constants.CREATEDTMSTMP: util.get_current_tmstmp_str(),
+            constants.ID: gt_doc["CanteenTrackerId"],
+            constants.TYPE: constants.CANTEEN_TRACKER,
+            "GameId": gt_doc["GameId"],
+            "GameTrackerId": gt_id,
+            "TxId": None,
+            "isActive": True,
+            "isBilled": False,
+            "isCancelled": False,
+            "MenuItems": [],
+            "Players": []
+        }
+        isNew = True
+    else:
+        ex_ct_doc_ref = trans_coll.document(gt_doc["CanteenTrackerId"])
+        ex_ct_doc = ex_ct_doc_ref.get().to_dict()
+
+    if "PlayerId" not in doc and "PlayerId" == None:
+        for mitem_to_add in doc["MenuItems"]:
+            found = False
+            for mitem in ex_ct_doc["MenuItems"]:
+                if mitem["Id"] == mitem_to_add["Id"]:
+                    mitem["Quan"] += mitem_to_add["Quantity"]
+                    ex_ct_doc["Cost"] += mitem_to_add["Cost"] * mitem_to_add["Quantity"]
+                    found = True
+                    break
+            if not found:
+                mitem_to_add_doc = get_by_id(mitem_to_add["Id"])
+                mitem_to_add["Cost"] = mitem_to_add_doc["Cost"]
+                mitem_to_add["Name"] = mitem_to_add_doc["Name"]
+                ex_ct_doc["Cost"] += mitem_to_add["Cost"] * mitem_to_add["Quantity"]
+                ex_ct_doc["MenuItems"].append(mitem_to_add)
+    else:
+        for player in ex_ct_doc["Players"]:
+            if player["Id"] == doc["PlayerId"]:
+                for mitem_to_add in doc["MenuItems"]:
+                    found = False
+                    for mitem in player["MenuItems"]:
+                        if mitem["Id"] == mitem_to_add["Id"]:
+                            mitem["Quan"] += mitem_to_add["Quantity"]
+                            player["Cost"] += mitem_to_add["Cost"] * mitem_to_add["Quantity"]
+                            found = True
+                            break
+                    if not found:
+                        mitem_to_add_doc = get_by_id(mitem_to_add["Id"])
+                        mitem_to_add["Cost"] = mitem_to_add_doc["Cost"]
+                        mitem_to_add["Name"] = mitem_to_add_doc["Name"]
+                        player["MenuItems"].append(mitem_to_add)
+                        player["Cost"] += mitem_to_add["Cost"] * mitem_to_add["Quantity"]
+                break
+    if isNew:
+        trans_coll.add(ex_ct_doc, ex_ct_doc["ID"])
+    else:
+        gt_doc["CanteenTrackerId"] = ex_ct_doc["ID"]
+        gt_doc_ref.update(gt_doc)
+        ex_ct_doc_ref.update(ex_ct_doc)
+
+    update_stock(doc)
+    return True, ex_ct_doc
+
+def update_stock(doc: dict):
+    for mitem in doc["MenuItems"]:
+        mitem_doc = get_by_id(mitem["Id"])
+        remaining = sys.maxsize
+        for ingnt in mitem_doc["Ingredients"]:
+            ingnt_doc = get_by_id(mitem_doc["RawMtrlId"])
+            ingnt_doc["Quantity"] -= mitem["Quantity"]*ingnt["Quantity"]
+            update(ingnt_doc["Id"], ingnt_doc)
+
+            if ingnt_doc["Quantity"] <= remaining:
+                remaining = ingnt_doc["Quantity"]
+        mitem_doc["Remaining"] = remaining
+        update(mitem_doc["Id"], mitem_doc)
+
+def update_stock_edit(doc: dict):
+    update_stock(doc)
+
+    for player in doc["Players"]:
+        update_stock(player)
+
+def get_remaining_stock(doc: dict):
+    remaining = sys.maxsize
+    for ingnt in doc["Ingredients"]:
+        ingnt_doc = get_by_id(ingnt["RawMtrlId"])
+        if ingnt_doc["Quantity"] < remaining:
+            remaining = ingnt_doc["Quantity"]
+    return remaining
 
 def update_ct(doc_id: str, doc: dict):
     doc_ref = trans_coll.document(doc_id)
@@ -193,6 +326,8 @@ def update_ct(doc_id: str, doc: dict):
             menus = player.get("MenuItems", None)
             if menus is not None:
                 for menu in menus:
+                    if "Cost" not in player:
+                        player["Cost"] = 0
                     player["Cost"] += menu["Cost"] * menu["Quan"]
                     cost += menu["Cost"] * menu["Quan"]
     ex_doc["Players"] = players
@@ -205,10 +340,15 @@ def update_ct(doc_id: str, doc: dict):
     ex_doc["Cost"] = cost
 
     doc_ref.update(ex_doc)
+    update_stock_edit(ex_doc)
     return True, ex_doc
 
 def get_all_pending_bills(typ: str):
     query = trans_coll.where('Type','==',typ).where('isPaid','==',False)
+    return query.stream()
+
+def get_all_paid_bills(typ: str):
+    query = trans_coll.where('Type','==',typ).where('isPaid','==',True)
     return query.stream()
 
 def get_active_game_trackers(typ: str):
@@ -238,7 +378,7 @@ def get_closed_not_billed_games():
         game_dict = game.to_dict()
         nm_tr_map[game_dict['Id']] = game_dict['Name']
     
-    query = trans_coll.where('Type','==',constants.GAME_TRACKER).where('isActive','==',False).where('isBilled','==',False)
+    query = trans_coll.where('Type','==',constants.GAME_TRACKER).where('isActive','==',False).where('isBilled','==',False).where('isCancelled','==',False)
     bills = {'ClosedNotBilledGames':[]}
     for bill in query.stream():
         bill_doc = bill.to_dict()
@@ -253,8 +393,54 @@ def get_closed_not_billed_games():
     return bills
 
 def check_pending_bill(pid: str):
-    query = trans_coll.where('Type','==',constants.BILL_TRACKER).where('Player.Id','==',pid).where('isPaid','==',False)
-    return query.stream()
+    query = trans_coll.where('Type','==',constants.BILL_TRACKER).where('PlayerId','==',pid).where('isPaid','==',False)
+    pen_bills = []
+    for bill_doc in query.stream():
+        pen_bills.append(bill_doc.to_dict())
+    return pen_bills
+
+def get_all_plyr_bills(isPaid):
+    # add game name
+    games = get_all(constants.GAME)
+    nm_tr_map = {}
+    for game in games:
+        game_dict = game.to_dict()
+        nm_tr_map[game_dict['Id']] = game_dict['Name']
+
+    query = trans_coll.where('Type','==',constants.BILL_TRACKER).where('isPaid','==',isPaid)
+    plyr_bills = {"BillTrackers": []}
+    for bill_doc_st in query.stream():
+        bill_doc = bill_doc_st.to_dict()
+        
+        plyr_exst = bill_doc.get("PlayerId",None)
+        if plyr_exst is None:
+            continue
+
+        bill_doc['GameName'] = nm_tr_map[bill_doc['GameId']]
+
+        # send only phone and credit
+        plyr_doc = get_by_id(bill_doc["PlayerId"])
+        # plyr = {
+        #     "Name": plyr_doc.get("Name",None),
+        #     "Phone": plyr_doc.get("Phone",None),
+        #     "Credit": plyr_doc.get("Credit",None),
+        #     "isPlaying": plyr_doc.get("isPlaying",None)
+        # }
+        bill_doc['Player'] = plyr_doc
+
+        if bill_doc['CanteenTrackerId'] is not None:
+            ct_doc = get_by_id_trans(bill_doc['CanteenTrackerId'])
+            bill_doc['CanteenTracker'] = ct_doc
+        else:
+            bill_doc['CanteenTracker'] = None
+        
+        if bill_doc['GameTrackerId'] is not None:
+            gt_doc = get_by_id_trans(bill_doc['GameTrackerId'])
+            bill_doc['GameTracker'] = gt_doc
+        else:
+            bill_doc['CanteenTracker'] = None
+        plyr_bills["BillTrackers"].append(bill_doc)
+    return plyr_bills
     
 
 # def get_next_id_transactional():

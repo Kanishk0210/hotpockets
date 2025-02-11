@@ -14,3 +14,5 @@ MENU = 'Menu'
 GAME_TRACKER = 'GameTracker'
 CANTEEN_TRACKER = 'CanteenTracker'
 BILL_TRACKER = 'BillTracker'
+DAILY_COLLECT = "DailyCollect"
+SAFE_ID = "Safe"

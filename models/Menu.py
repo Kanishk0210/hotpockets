@@ -12,6 +12,7 @@ class RawMtrl(BaseModel):
     QuantityPerBox: Union[float, int] = None
     CostPerBox: Union[float, int] =None #Rs
     Expiry: str = None
+    Category: str
 
 class Ingredient(BaseModel):
     Name: str
@@ -25,3 +26,5 @@ class Menu(BaseModel):
     Type: str = Field(default=constants.MENU)
     Ingredients: List[Ingredient] 
     Price: Union[float, int]
+    Category: str
+    Remaining: Union[float, int] = 999

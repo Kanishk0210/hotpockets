@@ -25,7 +25,7 @@ class GameTracker(BaseModel):
     StrtTmStmp: str
     EndTmStmp: str = None
     DurationInMin: Union[float, int] = None
-    Players: List[Player] = None
+    Players: List[Player] = []
     GameId: str
     Cost: Union[float, int] = None
     CanteenTrackerId: str = None

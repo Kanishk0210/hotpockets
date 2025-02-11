@@ -16,9 +16,9 @@ class MenuItem(BaseModel):
     Quan: Union[float, int]
 
 class BillTracker(BaseModel):
-    def __init__(self, canteenTrackerId: str, gameTrackerId: str, gameId: str):
+    def __init__(self, canteenTrackerId: str, gameTrackerId: str, gameId: str, playerId: str):
         super().__init__(Type = constants.BILL_TRACKER, CanteenTrackerId = canteenTrackerId,
-            GameTrackerId = gameTrackerId, GameId = gameId)
+            GameTrackerId = gameTrackerId, GameId = gameId, PlayerId = playerId)
     
     def get_txid(self):
         return constants.BILL_TRACKER + '::' + str(uuid.uuid1())  
@@ -35,4 +35,6 @@ class BillTracker(BaseModel):
     CanteenCost: Union[float, int] = 0
     TotalCost: Union[float, int] = 0 # sum of canteencost, gamecost
     isPaid: bool = False
-    Mode: Mode = None
+    Mode: dict = None
+    PlayerId: str
+    Discount: Union[float, int] = 0
