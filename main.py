@@ -251,10 +251,11 @@ def update_trans(doc_id: str, doc: dict):
             for menu in menus:
                 cost += menu["Cost"]* menu["Quan"]
         doc["Cost"] = cost
+        fs_db.update_stock_edit(doc)
 
     isUpdated = fs_db.update_trans(doc_id, doc)
 
-    fs_db.update_stock_edit(doc)
+    
 
     if not isUpdated:
         JSONResponse(content='Failed to Update.', status_code=500)

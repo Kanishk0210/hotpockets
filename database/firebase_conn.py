@@ -246,7 +246,7 @@ def add_game_canteen(gt_id: str, doc: dict):
     return True, ex_ct_doc
 
 def update_stock(doc: dict):
-    for mitem in doc["MenuItems"]:
+    for mitem in doc.get("MenuItems",[]):
         mitem_doc = get_by_id(mitem["Id"])
         remaining = sys.maxsize
         for ingnt in mitem_doc["Ingredients"]:
