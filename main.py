@@ -254,6 +254,8 @@ def update_trans(doc_id: str, doc: dict):
 
     isUpdated = fs_db.update_trans(doc_id, doc)
 
+    fs_db.update_stock_edit(doc)
+
     if not isUpdated:
         JSONResponse(content='Failed to Update.', status_code=500)
     return JSONResponse(content='Successfully Updated.', status_code=200)
