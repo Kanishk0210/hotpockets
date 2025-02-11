@@ -236,7 +236,8 @@ def process_end_game(gt_end: GameTrackerEndRequest):
             "BaseCost": game_doc.get('BaseCost', 0),
             "XPlayerCharge": x_plyr_chrg,
             "GamePlayCost": round(dur*cost_per_min),
-            "isCancelled": isCancelled
+            "isCancelled": isCancelled,
+            "GamePlayers": gt_end.GamePlayers
         }
         fs_db.update_trans(gt_end.Id, gt_update)
         return True

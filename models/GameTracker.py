@@ -6,6 +6,7 @@ import uuid
 class GameTrackerEndRequest(BaseModel):
     Id: str
     EndTmStmp: str
+    GamePlayers: List[str] = None
 
 class Player(BaseModel):
     Id: str
