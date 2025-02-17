@@ -179,7 +179,7 @@ def update_trans(doc_id: str, doc: dict):
 
 def add_game_canteen(gt_id: str, doc: dict):
     gt_doc_ref = trans_coll.document(gt_id)
-    gt_doc = doc_ref.get().to_dict()
+    gt_doc = gt_doc_ref.get().to_dict()
     isNew = False
     if gt_doc["CanteenTrackerId"] == None:
         gt_doc["CanteenTrackerId"] = constants.CANTEEN_TRACKER +'::'+str(get_next_id(typ))
