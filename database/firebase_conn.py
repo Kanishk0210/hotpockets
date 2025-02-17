@@ -207,15 +207,15 @@ def add_game_canteen(gt_id: str, doc: dict):
             found = False
             for mitem in ex_ct_doc["MenuItems"]:
                 if mitem["Id"] == mitem_to_add["Id"]:
-                    mitem["Quan"] += mitem_to_add["Quantity"]
-                    ex_ct_doc["Cost"] += mitem_to_add["Cost"] * mitem_to_add["Quantity"]
+                    mitem["Quan"] += mitem_to_add["Quan"]
+                    ex_ct_doc["Cost"] += mitem_to_add["Cost"] * mitem_to_add["Quan"]
                     found = True
                     break
             if not found:
                 mitem_to_add_doc = get_by_id(mitem_to_add["Id"])
                 mitem_to_add["Cost"] = mitem_to_add_doc["Cost"]
                 mitem_to_add["Name"] = mitem_to_add_doc["Name"]
-                ex_ct_doc["Cost"] += mitem_to_add["Cost"] * mitem_to_add["Quantity"]
+                ex_ct_doc["Cost"] += mitem_to_add["Cost"] * mitem_to_add["Quan"]
                 ex_ct_doc["MenuItems"].append(mitem_to_add)
     else:
         for player in ex_ct_doc["Players"]:
@@ -224,8 +224,8 @@ def add_game_canteen(gt_id: str, doc: dict):
                     found = False
                     for mitem in player["MenuItems"]:
                         if mitem["Id"] == mitem_to_add["Id"]:
-                            mitem["Quan"] += mitem_to_add["Quantity"]
-                            player["Cost"] += mitem_to_add["Cost"] * mitem_to_add["Quantity"]
+                            mitem["Quan"] += mitem_to_add["Quan"]
+                            player["Cost"] += mitem_to_add["Cost"] * mitem_to_add["Quan"]
                             found = True
                             break
                     if not found:
@@ -233,7 +233,7 @@ def add_game_canteen(gt_id: str, doc: dict):
                         mitem_to_add["Cost"] = mitem_to_add_doc["Cost"]
                         mitem_to_add["Name"] = mitem_to_add_doc["Name"]
                         player["MenuItems"].append(mitem_to_add)
-                        player["Cost"] += mitem_to_add["Cost"] * mitem_to_add["Quantity"]
+                        player["Cost"] += mitem_to_add["Cost"] * mitem_to_add["Quan"]
                 break
     if isNew:
         trans_coll.add(ex_ct_doc, ex_ct_doc["ID"])
@@ -251,7 +251,7 @@ def update_stock(doc: dict):
         remaining = sys.maxsize
         for ingnt in mitem_doc["Ingredients"]:
             ingnt_doc = get_by_id(mitem_doc["RawMtrlId"])
-            ingnt_doc["Quantity"] -= mitem["Quantity"]*ingnt["Quantity"]
+            ingnt_doc["Quantity"] -= mitem["Quan"]*ingnt["Quantity"]
             update(ingnt_doc["Id"], ingnt_doc)
 
             if ingnt_doc["Quantity"] <= remaining:
