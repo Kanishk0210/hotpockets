@@ -180,7 +180,6 @@ def get_raw_mtrls():
 def add_menu_item(menu: Menu):
     #chars = string.ascii_letters + string.digits
     # doc_id = 'Player::'+ player.name[:3].upper()+'_'+player.phone[-4:]+'_'+''.join(random.choices(chars, k=4)) # Player::ASH_6891_oWtp
-    menu.Remaining = fs_db.get_remaining_stock(menu.dict())
     isAdded = fs_db.add(constants.MENU, menu.dict())
 
     if not isAdded:
@@ -194,7 +193,9 @@ def get_menu_items():
 
     menu_items_res = {'MenuItems':[]}
     for menu_item in menu_items:
-        menu_items_res['MenuItems'].append(menu_item.to_dict())
+        menu = menu_item.to_dict()
+        menu["Remaining"] = fs_db.get_remaining_stock(menu)
+        menu_items_res['MenuItems'].append(menu)
     return JSONResponse(content=menu_items_res, status_code=200)
 
 @app.put("/update/{doc_id}")
@@ -377,10 +378,10 @@ def update_ct(doc_id: str, doc: dict):
 
 @app.post("/game/canteen/{gt_id}")
 def add_game_canteen(gt_id: str, doc: dict):
-    isAdded = fs_db.add_game_canteen(gt_id, doc)
+    isAdded, doc = fs_db.add_game_canteen(gt_id, doc)
     if not isAdded:
         JSONResponse(content='Failed to Add.', status_code=500)
-    return JSONResponse(content='Successfully added.', status_code=200)
+    return JSONResponse(content=doc, status_code=200)
 
 @app.get("/canteen/track")
 def get_canteen_trackers():

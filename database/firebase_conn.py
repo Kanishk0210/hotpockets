@@ -182,12 +182,12 @@ def add_game_canteen(gt_id: str, doc: dict):
     gt_doc = gt_doc_ref.get().to_dict()
     isNew = False
     if gt_doc["CanteenTrackerId"] == None:
-        gt_doc["CanteenTrackerId"] = constants.CANTEEN_TRACKER +'::'+str(get_next_id(typ))
+        gt_doc["CanteenTrackerId"] = constants.CANTEEN_TRACKER +'::'+str(get_next_id(constants.CANTEEN_TRACKER))
         ex_ct_doc = {
             constants.MDFDTMSTMP: util.get_current_tmstmp_str(),
             constants.CREATEDTMSTMP: util.get_current_tmstmp_str(),
             constants.ID: gt_doc["CanteenTrackerId"],
-            constants.TYPE: constants.CANTEEN_TRACKER,
+            "Type": constants.CANTEEN_TRACKER,
             "GameId": gt_doc["GameId"],
             "GameTrackerId": gt_id,
             "TxId": None,
@@ -202,7 +202,7 @@ def add_game_canteen(gt_id: str, doc: dict):
         ex_ct_doc_ref = trans_coll.document(gt_doc["CanteenTrackerId"])
         ex_ct_doc = ex_ct_doc_ref.get().to_dict()
 
-    if "PlayerId" not in doc and "PlayerId" == None:
+    if doc["PlayerId"] == None:
         for mitem_to_add in doc["MenuItems"]:
             found = False
             for mitem in ex_ct_doc["MenuItems"]:
@@ -236,11 +236,12 @@ def add_game_canteen(gt_id: str, doc: dict):
                         player["Cost"] += mitem_to_add["Cost"] * mitem_to_add["Quan"]
                 break
     if isNew:
-        trans_coll.add(ex_ct_doc, ex_ct_doc["ID"])
+        trans_coll.add(ex_ct_doc, ex_ct_doc["Id"])
     else:
-        gt_doc["CanteenTrackerId"] = ex_ct_doc["ID"]
-        gt_doc_ref.update(gt_doc)
         ex_ct_doc_ref.update(ex_ct_doc)
+    
+    gt_doc["CanteenTrackerId"] = ex_ct_doc["Id"]
+    gt_doc_ref.update(gt_doc)
 
     update_stock(doc)
     return True, ex_ct_doc
@@ -250,7 +251,7 @@ def update_stock(doc: dict):
         mitem_doc = get_by_id(mitem["Id"])
         remaining = sys.maxsize
         for ingnt in mitem_doc["Ingredients"]:
-            ingnt_doc = get_by_id(mitem_doc["RawMtrlId"])
+            ingnt_doc = get_by_id(ingnt["RawMtrlId"])
             ingnt_doc["Quantity"] -= mitem["Quan"]*ingnt["Quantity"]
             update(ingnt_doc["Id"], ingnt_doc)
 
