@@ -213,7 +213,7 @@ def add_game_canteen(gt_id: str, doc: dict):
                     break
             if not found:
                 mitem_to_add_doc = get_by_id(mitem_to_add["Id"])
-                mitem_to_add["Cost"] = mitem_to_add_doc["Cost"]
+                mitem_to_add["Cost"] = mitem_to_add_doc["Price"]
                 mitem_to_add["Name"] = mitem_to_add_doc["Name"]
                 ex_ct_doc["Cost"] += mitem_to_add["Cost"] * mitem_to_add["Quan"]
                 ex_ct_doc["MenuItems"].append(mitem_to_add)
@@ -230,7 +230,7 @@ def add_game_canteen(gt_id: str, doc: dict):
                             break
                     if not found:
                         mitem_to_add_doc = get_by_id(mitem_to_add["Id"])
-                        mitem_to_add["Cost"] = mitem_to_add_doc["Cost"]
+                        mitem_to_add["Cost"] = mitem_to_add_doc["Price"]
                         mitem_to_add["Name"] = mitem_to_add_doc["Name"]
                         player["MenuItems"].append(mitem_to_add)
                         player["Cost"] += mitem_to_add["Cost"] * mitem_to_add["Quan"]
