@@ -179,15 +179,15 @@ def update_trans(doc_id: str, doc: dict):
 
 def add_game_canteen(gt_id: str, doc: dict):
     gt_doc_ref = trans_coll.document(gt_id)
-    gt_doc = doc_ref.get().to_dict()
+    gt_doc = gt_doc_ref.get().to_dict()
     isNew = False
     if gt_doc["CanteenTrackerId"] == None:
-        gt_doc["CanteenTrackerId"] = constants.CANTEEN_TRACKER +'::'+str(get_next_id(typ))
+        gt_doc["CanteenTrackerId"] = constants.CANTEEN_TRACKER +'::'+str(get_next_id(constants.CANTEEN_TRACKER))
         ex_ct_doc = {
             constants.MDFDTMSTMP: util.get_current_tmstmp_str(),
             constants.CREATEDTMSTMP: util.get_current_tmstmp_str(),
             constants.ID: gt_doc["CanteenTrackerId"],
-            constants.TYPE: constants.CANTEEN_TRACKER,
+            "Type": constants.CANTEEN_TRACKER,
             "GameId": gt_doc["GameId"],
             "GameTrackerId": gt_id,
             "TxId": None,
@@ -195,52 +195,73 @@ def add_game_canteen(gt_id: str, doc: dict):
             "isBilled": False,
             "isCancelled": False,
             "MenuItems": [],
-            "Players": []
+            "Players": [],
+            "Cost": 0
         }
         isNew = True
     else:
         ex_ct_doc_ref = trans_coll.document(gt_doc["CanteenTrackerId"])
         ex_ct_doc = ex_ct_doc_ref.get().to_dict()
 
-    if "PlayerId" not in doc and "PlayerId" == None:
+    if doc["PlayerId"] == None:
         for mitem_to_add in doc["MenuItems"]:
             found = False
             for mitem in ex_ct_doc["MenuItems"]:
                 if mitem["Id"] == mitem_to_add["Id"]:
-                    mitem["Quan"] += mitem_to_add["Quantity"]
-                    ex_ct_doc["Cost"] += mitem_to_add["Cost"] * mitem_to_add["Quantity"]
+                    mitem["Quan"] += mitem_to_add["Quan"]
+                    ex_ct_doc["Cost"] += mitem_to_add["Cost"] * mitem_to_add["Quan"]
                     found = True
                     break
             if not found:
                 mitem_to_add_doc = get_by_id(mitem_to_add["Id"])
-                mitem_to_add["Cost"] = mitem_to_add_doc["Cost"]
+                mitem_to_add["Cost"] = mitem_to_add_doc["Price"]
                 mitem_to_add["Name"] = mitem_to_add_doc["Name"]
-                ex_ct_doc["Cost"] += mitem_to_add["Cost"] * mitem_to_add["Quantity"]
+                ex_ct_doc["Cost"] += mitem_to_add["Cost"] * mitem_to_add["Quan"]
                 ex_ct_doc["MenuItems"].append(mitem_to_add)
     else:
-        for player in ex_ct_doc["Players"]:
+        plyrFound = False
+        player = {}
+        for plyr in ex_ct_doc["Players"]:
             if player["Id"] == doc["PlayerId"]:
-                for mitem_to_add in doc["MenuItems"]:
-                    found = False
-                    for mitem in player["MenuItems"]:
-                        if mitem["Id"] == mitem_to_add["Id"]:
-                            mitem["Quan"] += mitem_to_add["Quantity"]
-                            player["Cost"] += mitem_to_add["Cost"] * mitem_to_add["Quantity"]
-                            found = True
-                            break
-                    if not found:
-                        mitem_to_add_doc = get_by_id(mitem_to_add["Id"])
-                        mitem_to_add["Cost"] = mitem_to_add_doc["Cost"]
-                        mitem_to_add["Name"] = mitem_to_add_doc["Name"]
-                        player["MenuItems"].append(mitem_to_add)
-                        player["Cost"] += mitem_to_add["Cost"] * mitem_to_add["Quantity"]
-                break
+                plyrFound = True
+                player = plyr
+        
+        if not plyrFound:
+            plyr_doc = get_by_id(doc["PlayerId"])
+            player = {
+                "Id": plyr_doc["Id"],
+                "Name": plyr_doc["Name"],
+                "MenuItems": [],
+                "Cost": 0
+            }
+
+        for mitem_to_add in doc["MenuItems"]:
+            found = False
+            for mitem in player["MenuItems"]:
+                if mitem["Id"] == mitem_to_add["Id"]:
+                    mitem["Quan"] += mitem_to_add["Quan"]
+                    player["Cost"] += mitem_to_add["Cost"] * mitem_to_add["Quan"]
+                    ex_ct_doc["Cost"] += mitem_to_add["Cost"] * mitem_to_add["Quan"]
+                    found = True
+                    break
+            if not found:
+                mitem_to_add_doc = get_by_id(mitem_to_add["Id"])
+                mitem_to_add["Cost"] = mitem_to_add_doc["Price"]
+                mitem_to_add["Name"] = mitem_to_add_doc["Name"]
+                player["MenuItems"].append(mitem_to_add)
+                player["Cost"] += mitem_to_add["Cost"] * mitem_to_add["Quan"]
+                ex_ct_doc["Cost"] += mitem_to_add["Cost"] * mitem_to_add["Quan"]
+        
+        if not plyrFound:
+            ex_ct_doc["Players"].append(player)
+
     if isNew:
-        trans_coll.add(ex_ct_doc, ex_ct_doc["ID"])
+        trans_coll.add(ex_ct_doc, ex_ct_doc["Id"])
     else:
-        gt_doc["CanteenTrackerId"] = ex_ct_doc["ID"]
-        gt_doc_ref.update(gt_doc)
         ex_ct_doc_ref.update(ex_ct_doc)
+    
+    gt_doc["CanteenTrackerId"] = ex_ct_doc["Id"]
+    gt_doc_ref.update(gt_doc)
 
     update_stock(doc)
     return True, ex_ct_doc
@@ -250,8 +271,8 @@ def update_stock(doc: dict):
         mitem_doc = get_by_id(mitem["Id"])
         remaining = sys.maxsize
         for ingnt in mitem_doc["Ingredients"]:
-            ingnt_doc = get_by_id(mitem_doc["RawMtrlId"])
-            ingnt_doc["Quantity"] -= mitem["Quantity"]*ingnt["Quantity"]
+            ingnt_doc = get_by_id(ingnt["RawMtrlId"])
+            ingnt_doc["Quantity"] -= mitem["Quan"]*ingnt["Quantity"]
             update(ingnt_doc["Id"], ingnt_doc)
 
             if ingnt_doc["Quantity"] <= remaining:
