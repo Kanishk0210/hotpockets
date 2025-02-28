@@ -195,7 +195,8 @@ def add_game_canteen(gt_id: str, doc: dict):
             "isBilled": False,
             "isCancelled": False,
             "MenuItems": [],
-            "Players": []
+            "Players": [],
+            "Cost": 0
         }
         isNew = True
     else:
@@ -218,23 +219,42 @@ def add_game_canteen(gt_id: str, doc: dict):
                 ex_ct_doc["Cost"] += mitem_to_add["Cost"] * mitem_to_add["Quan"]
                 ex_ct_doc["MenuItems"].append(mitem_to_add)
     else:
-        for player in ex_ct_doc["Players"]:
+        plyrFound = False
+        player = {}
+        for plyr in ex_ct_doc["Players"]:
             if player["Id"] == doc["PlayerId"]:
-                for mitem_to_add in doc["MenuItems"]:
-                    found = False
-                    for mitem in player["MenuItems"]:
-                        if mitem["Id"] == mitem_to_add["Id"]:
-                            mitem["Quan"] += mitem_to_add["Quan"]
-                            player["Cost"] += mitem_to_add["Cost"] * mitem_to_add["Quan"]
-                            found = True
-                            break
-                    if not found:
-                        mitem_to_add_doc = get_by_id(mitem_to_add["Id"])
-                        mitem_to_add["Cost"] = mitem_to_add_doc["Price"]
-                        mitem_to_add["Name"] = mitem_to_add_doc["Name"]
-                        player["MenuItems"].append(mitem_to_add)
-                        player["Cost"] += mitem_to_add["Cost"] * mitem_to_add["Quan"]
-                break
+                plyrFound = True
+                player = plyr
+        
+        if not plyrFound:
+            plyr_doc = get_by_id(doc["PlayerId"])
+            player = {
+                "Id": plyr_doc["Id"],
+                "Name": plyr_doc["Name"],
+                "MenuItems": [],
+                "Cost": 0
+            }
+
+        for mitem_to_add in doc["MenuItems"]:
+            found = False
+            for mitem in player["MenuItems"]:
+                if mitem["Id"] == mitem_to_add["Id"]:
+                    mitem["Quan"] += mitem_to_add["Quan"]
+                    player["Cost"] += mitem_to_add["Cost"] * mitem_to_add["Quan"]
+                    ex_ct_doc["Cost"] += mitem_to_add["Cost"] * mitem_to_add["Quan"]
+                    found = True
+                    break
+            if not found:
+                mitem_to_add_doc = get_by_id(mitem_to_add["Id"])
+                mitem_to_add["Cost"] = mitem_to_add_doc["Price"]
+                mitem_to_add["Name"] = mitem_to_add_doc["Name"]
+                player["MenuItems"].append(mitem_to_add)
+                player["Cost"] += mitem_to_add["Cost"] * mitem_to_add["Quan"]
+                ex_ct_doc["Cost"] += mitem_to_add["Cost"] * mitem_to_add["Quan"]
+        
+        if not plyrFound:
+            ex_ct_doc["Players"].append(player)
+
     if isNew:
         trans_coll.add(ex_ct_doc, ex_ct_doc["Id"])
     else:
