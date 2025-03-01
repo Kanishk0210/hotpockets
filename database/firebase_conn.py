@@ -266,6 +266,75 @@ def add_game_canteen(gt_id: str, doc: dict):
     update_stock(doc)
     return True, ex_ct_doc
 
+def add_ind_canteen(doc: dict):
+    isNew = False
+    if doc["Id"] == None:
+        ct_id = constants.CANTEEN_TRACKER +'::'+str(get_next_id(constants.CANTEEN_TRACKER))
+        ex_ct_doc = {
+            constants.MDFDTMSTMP: util.get_current_tmstmp_str(),
+            constants.CREATEDTMSTMP: util.get_current_tmstmp_str(),
+            constants.ID: ct_id,
+            "Type": constants.CANTEEN_TRACKER,
+            "GameId": None,
+            "GameTrackerId": None,
+            "TxId": None,
+            "isActive": True,
+            "isBilled": False,
+            "isCancelled": False,
+            "MenuItems": [],
+            "Players": [],
+            "Cost": 0
+        }
+        isNew = True
+    else:
+        ex_ct_doc_ref = trans_coll.document(doc["Id"])
+        ex_ct_doc = ex_ct_doc_ref.get().to_dict()
+
+    plyrFound = False
+    player = {}
+    for plyr in ex_ct_doc["Players"]:
+        if player["Id"] == doc["PlayerId"]:
+            plyrFound = True
+            player = plyr
+    
+    if not plyrFound:
+        plyr_doc = get_by_id(doc["PlayerId"])
+        player = {
+            "Id": plyr_doc["Id"],
+            "Name": plyr_doc["Name"],
+            "MenuItems": [],
+            "Cost": 0
+        }
+
+    for mitem_to_add in doc["MenuItems"]:
+        found = False
+        for mitem in player["MenuItems"]:
+            if mitem["Id"] == mitem_to_add["Id"]:
+                mitem["Quan"] += mitem_to_add["Quan"]
+                player["Cost"] += mitem_to_add["Cost"] * mitem_to_add["Quan"]
+                ex_ct_doc["Cost"] += mitem_to_add["Cost"] * mitem_to_add["Quan"]
+                found = True
+                break
+        if not found:
+            mitem_to_add_doc = get_by_id(mitem_to_add["Id"])
+            mitem_to_add["Cost"] = mitem_to_add_doc["Price"]
+            mitem_to_add["Name"] = mitem_to_add_doc["Name"]
+            player["MenuItems"].append(mitem_to_add)
+            player["Cost"] += mitem_to_add["Cost"] * mitem_to_add["Quan"]
+            ex_ct_doc["Cost"] += mitem_to_add["Cost"] * mitem_to_add["Quan"]
+    
+    if not plyrFound:
+        ex_ct_doc["Players"].append(player)
+
+    if isNew:
+        trans_coll.add(ex_ct_doc, ex_ct_doc["Id"])
+    else:
+        ex_ct_doc_ref.update(ex_ct_doc)
+
+    update_stock(doc)
+    return True, ex_ct_doc
+
+
 def update_stock(doc: dict):
     for mitem in doc.get("MenuItems",[]):
         mitem_doc = get_by_id(mitem["Id"])
@@ -363,6 +432,10 @@ def update_ct(doc_id: str, doc: dict):
     doc_ref.update(ex_doc)
     update_stock_edit(ex_doc)
     return True, ex_doc
+
+def get_all_ind_canteen():
+    query = trans_coll.where('Type','==',constants.CANTEEN_TRACKER).where('GameId','==',None)
+    return query.stream()
 
 def get_all_pending_bills(typ: str):
     query = trans_coll.where('Type','==',typ).where('isPaid','==',False)
@@ -471,6 +544,7 @@ def trash(menu_itms: dict):
             tmstmp = util.get_current_tmstmp_str()
             trash = {
                 "Id": "Trash",
+                "Type": "Trash",
                 tmstmp: menu_itms
             }
             target_coll.add(trash, "Trash")
@@ -484,6 +558,8 @@ def trash(menu_itms: dict):
         return False
     return True
 
+def get_trash():
+    return target_coll.document("Trash").get().to_dict()
 
 # def get_next_id_transactional():
 #     with store.transaction() as transaction:

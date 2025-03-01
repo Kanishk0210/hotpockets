@@ -244,3 +244,51 @@ def process_end_game(gt_end: GameTrackerEndRequest):
     except Exception as e:
         print(e)
         return False
+
+def process_ind_canteen_generate_bill(ct_id: str):
+    try:
+        # fetch canteen tracker
+        ct_doc = fs_db.get_by_id_trans(ct_id)
+        print(ct_doc)
+        # if already billed
+        if ct_doc["isBilled"] is True:
+            return True
+
+        ct_plyr_ids=[]
+        div_game_cost = 0
+
+        # generate bill for ind canteen player
+        for player in ct_doc.get('Players',[]):
+            ct_plyr_ids.append(player['Id'])
+            # check for pending bill
+            pending_bills = fs_db.check_pending_bill(player['Id'])
+            print(pending_bills)
+            count = len(pending_bills)
+            print(count)
+            
+            if count>0:
+                pending_bill = pending_bills[0]
+                pending_bill['CanteenCost'] += player['Cost']
+                pending_bill['GameCost'] += div_game_cost
+                pending_bill['TotalCost'] = pending_bill['CanteenCost'] + pending_bill['GameCost']
+                fs_db.update_trans(pending_bill['Id'], pending_bill)
+            else:
+                bill_tracker = BillTracker(ct_id, None, None, player['Id'])
+                bill_tracker = bill_tracker.dict()
+                bill_tracker['CanteenCost'] = player['Cost']
+                bill_tracker['GameCost'] = div_game_cost
+                bill_tracker['TotalCost'] = bill_tracker['CanteenCost'] + bill_tracker['GameCost']
+                bill_tracker['Player'] = player
+                if bill_tracker['TotalCost'] != 0:
+                    fs_db.add_trans(constants.BILL_TRACKER, bill_tracker)
+
+        # update canteen tracker 
+        ct_update = {
+            "isActive": False,
+            "isBilled": True
+        }
+        fs_db.update_trans(ct_id, ct_update)
+        return True
+    except Exception as e:
+        print(e)
+        return False

@@ -383,6 +383,29 @@ def add_game_canteen(gt_id: str, doc: dict):
         JSONResponse(content='Failed to Add.', status_code=500)
     return JSONResponse(content=doc, status_code=200)
 
+@app.post("/ind/canteen")
+def add_ind_canteen(doc: dict):
+    isAdded, doc = fs_db.add_ind_canteen(doc)
+    if not isAdded:
+        JSONResponse(content='Failed to Ind Add.', status_code=500)
+    return JSONResponse(content=doc, status_code=200)
+
+@app.get("/ind/canteen/track")
+def get_ind_canteen_trackers():
+
+    ct_docs = fs_db.get_all_ind_canteen()
+
+    ct_docs_res = {'CanteenTrackers':[]}
+    for ct_doc in ct_docs:
+        ct_docs_res['CanteenTrackers'].append(ct_doc.to_dict())
+    return JSONResponse(content=ct_docs_res, status_code=200)
+
+@app.get("/ind/canteen/generate_bill/{ct_id}")
+def ind_canteen_generate_bill(ct_id: str):
+    if not game.process_ind_canteen_generate_bill(ct_id):
+        return JSONResponse(content='Failed to generate bill.', status_code=500)
+    return JSONResponse(content="Bill Generated successfully.", status_code=200)
+
 @app.get("/canteen/track")
 def get_canteen_trackers():
 
@@ -481,6 +504,13 @@ def trash(itm: dict):
     if not is_trashed:
         JSONResponse(content='Failed to Update Trash.', status_code=500)
     return JSONResponse(content='Successfully Updated Trash.', status_code=200)
+
+@app.get("/trash")
+def get_trash():
+    trash = fs_db.get_trash()
+    if trash is None:
+        return JSONResponse(content='Document not present in DB.', status_code=500)
+    return JSONResponse(content=trash, status_code=200)
 
 # @app.exception_handler(ValidationError)
 # def validation_exception_handler(request: Request, exc: ValidationError):
