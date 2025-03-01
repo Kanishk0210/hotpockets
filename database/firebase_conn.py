@@ -172,7 +172,7 @@ def update_target(doc_id: str, doc: dict):
     return True, doc
 
 def update_trans(doc_id: str, doc: dict):
-    doc_ref = trans_coll.document(doc_id)    
+    doc_ref = trans_coll.document(doc_id)
     doc[constants.MDFDTMSTMP] = util.get_current_tmstmp_str()
     doc_ref.update(doc)
     return True, doc
@@ -463,6 +463,25 @@ def get_all_plyr_bills(isPaid):
         plyr_bills["BillTrackers"].append(bill_doc)
     return plyr_bills
     
+def trash(menu_itms: dict):
+    try:
+        update_stock(menu_itms)
+        trash_ref = target_coll.document("Trash")
+        trash = trash_ref.to_dict()
+        if trash == None:
+            trash = {
+                "Id": "Trash",
+                util.get_current_tmstmp_str: menu_itms
+            }
+            target_coll.add(trash, "Trash")
+        else:
+            trash[util.get_current_tmstmp_str]= menu_itms
+            update_target("Trash", trash)
+    except Exception as e:
+        print(e)
+        return False
+    return True
+
 
 # def get_next_id_transactional():
 #     with store.transaction() as transaction:

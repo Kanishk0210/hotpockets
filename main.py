@@ -475,6 +475,13 @@ def get_safe():
         return JSONResponse(content='Document not present in DB.', status_code=500)
     return JSONResponse(content=safe, status_code=200)
 
+@app.post("/trash")
+def trash(itm: dict):
+    is_trashed = fs_db.trash(itm)
+    if not is_trashed:
+        JSONResponse(content='Failed to Update Trash.', status_code=500)
+    return JSONResponse(content='Successfully Updated Trash.', status_code=200)
+
 # @app.exception_handler(ValidationError)
 # def validation_exception_handler(request: Request, exc: ValidationError):
 #     return JSONResponse(status_code=422, content={'detail':'Validation Failed.','Validation Errors': exc.errors()})
