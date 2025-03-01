@@ -467,15 +467,17 @@ def trash(menu_itms: dict):
     try:
         update_stock(menu_itms)
         trash_ref = target_coll.document("Trash")
-        trash = trash_ref.to_dict()
-        if trash == None:
+        if not trash_ref.get().exists:
+            tmstmp = util.get_current_tmstmp_str()
             trash = {
                 "Id": "Trash",
-                util.get_current_tmstmp_str: menu_itms
+                tmstmp: menu_itms
             }
             target_coll.add(trash, "Trash")
         else:
-            trash[util.get_current_tmstmp_str]= menu_itms
+            trash = trash_ref.get().to_dict()
+            tmstmp = util.get_current_tmstmp_str()
+            trash[tmstmp]= menu_itms
             update_target("Trash", trash)
     except Exception as e:
         print(e)
