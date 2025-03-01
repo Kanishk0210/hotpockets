@@ -222,7 +222,7 @@ def add_game_canteen(gt_id: str, doc: dict):
         plyrFound = False
         player = {}
         for plyr in ex_ct_doc["Players"]:
-            if player["Id"] == doc["PlayerId"]:
+            if plyr["Id"] == doc["PlayerId"]:
                 plyrFound = True
                 player = plyr
         
@@ -293,7 +293,7 @@ def add_ind_canteen(doc: dict):
     plyrFound = False
     player = {}
     for plyr in ex_ct_doc["Players"]:
-        if player["Id"] == doc["PlayerId"]:
+        if plyr["Id"] == doc["PlayerId"]:
             plyrFound = True
             player = plyr
     
