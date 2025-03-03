@@ -240,8 +240,8 @@ def add_game_canteen(gt_id: str, doc: dict):
             for mitem in player["MenuItems"]:
                 if mitem["Id"] == mitem_to_add["Id"]:
                     mitem["Quan"] += mitem_to_add["Quan"]
-                    player["Cost"] += mitem_to_add["Cost"] * mitem_to_add["Quan"]
-                    ex_ct_doc["Cost"] += mitem_to_add["Cost"] * mitem_to_add["Quan"]
+                    player["Cost"] += mitem["Cost"] * mitem_to_add["Quan"]
+                    ex_ct_doc["Cost"] += mitem["Cost"] * mitem_to_add["Quan"]
                     found = True
                     break
             if not found:
@@ -311,8 +311,8 @@ def add_ind_canteen(doc: dict):
         for mitem in player["MenuItems"]:
             if mitem["Id"] == mitem_to_add["Id"]:
                 mitem["Quan"] += mitem_to_add["Quan"]
-                player["Cost"] += mitem_to_add["Cost"] * mitem_to_add["Quan"]
-                ex_ct_doc["Cost"] += mitem_to_add["Cost"] * mitem_to_add["Quan"]
+                player["Cost"] += mitem["Cost"] * mitem_to_add["Quan"]
+                ex_ct_doc["Cost"] += mitem["Cost"] * mitem_to_add["Quan"]
                 found = True
                 break
         if not found:
@@ -509,8 +509,9 @@ def get_all_plyr_bills(isPaid):
         plyr_exst = bill_doc.get("PlayerId",None)
         if plyr_exst is None:
             continue
-
-        bill_doc['GameName'] = nm_tr_map[bill_doc['GameId']]
+        
+        if bill_doc.get('GameId',None) is not None:
+            bill_doc['GameName'] = nm_tr_map[bill_doc.get('GameId',None)]
 
         # send only phone and credit
         plyr_doc = get_by_id(bill_doc["PlayerId"])
@@ -532,7 +533,7 @@ def get_all_plyr_bills(isPaid):
             gt_doc = get_by_id_trans(bill_doc['GameTrackerId'])
             bill_doc['GameTracker'] = gt_doc
         else:
-            bill_doc['CanteenTracker'] = None
+            bill_doc['GameTracker'] = None
         plyr_bills["BillTrackers"].append(bill_doc)
     return plyr_bills
     
