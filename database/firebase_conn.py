@@ -28,6 +28,7 @@ menu_item_counter_id = 'menu_item_counter'
 game_tracker_counter_id = 'game_tracker_counter'
 bill_tracker_counter_id = 'bill_tracker_counter'
 canteen_tracker_counter_id = 'canteen_tracker_counter'
+branch_counter_id = 'branch_counter'
 
 target_coll = store.collection(target_coll_str)
 source_coll = store.collection(source_coll_str)
@@ -42,6 +43,19 @@ menu_item_counter_ref = source_coll.document(menu_item_counter_id)
 game_tracker_counter_ref = source_coll.document(game_tracker_counter_id)
 bill_tracker_counter_ref = source_coll.document(bill_tracker_counter_id)
 canteen_tracker_counter_ref = source_coll.document(canteen_tracker_counter_id)
+branch_counter_ref = source_coll.document(branch_counter_id)
+
+# admin
+
+# create collection
+def create_collection(coll_name: str):
+    doc_ref = store.collection(coll_name).document(coll_name+"::0")
+    doc_ref.set({
+        "Id": coll_name+"::0",
+        constants.CREATEDTMSTMP: util.get_current_tmstmp_str
+    })
+    print("Collection "+ coll_name + " created")
+
 
 # source
 def add_dailycollect(dc: dict):
@@ -82,6 +96,8 @@ def get_counter_ref(typ: str):
         return bill_tracker_counter_ref
     if typ == constants.CANTEEN_TRACKER:
         return canteen_tracker_counter_ref
+    if typ == constants.BRANCH:
+        return branch_counter_ref
     raise Exception
 
 def get_next_id(typ: str):
@@ -561,6 +577,20 @@ def trash(menu_itms: dict):
 
 def get_trash():
     return target_coll.document("Trash").get().to_dict()
+
+def add_branch(branch_pld: dict):
+    doc_id = constants.BRANCH+'::'+str(get_next_id(constants.BRANCH))
+    branch_pld["Id"] = doc_id
+    branch_pld[constants.MDFDTMSTMP] = util.get_current_tmstmp_str()
+    branch_pld[constants.CREATEDTMSTMP] = util.get_current_tmstmp_str()
+
+    target_coll.add(branch_pld, doc_id)
+
+    create_collection(branch_pld["Name"]+"-masterdata-source")
+    create_collection(branch_pld["Name"]+"-masterdata-target")
+    create_collection(branch_pld["Name"]+"-transaction-data")
+
+    return True
 
 # def get_next_id_transactional():
 #     with store.transaction() as transaction:

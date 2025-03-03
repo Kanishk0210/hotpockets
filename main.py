@@ -7,7 +7,7 @@ from fastapi import FastAPI, APIRouter, Body, Depends
 from starlette.middleware.cors import CORSMiddleware
 from starlette.responses import JSONResponse
 
-# import uvicorn
+import uvicorn
 
 from database import firebase_conn as fs_db
 from services import game, daily_collect
@@ -21,6 +21,7 @@ from models.UserLoginSchema import UserLoginSchema
 from models.GameTracker import GameTracker, GameTrackerEndRequest
 from models.CanteenTracker import CanteenTracker
 from models.DailyCollect import DailyCollect
+from models.Branch import Branch
 from util import util, constants
 # from auth import auth_bearer, auth_handler
 from auth.auth_bearer import JWTBearer
@@ -512,6 +513,13 @@ def get_trash():
         return JSONResponse(content='Document not present in DB.', status_code=500)
     return JSONResponse(content=trash, status_code=200)
 
+@app.post("/branch")
+def add_branch(branch: Branch):
+    is_added = fs_db.add_branch(branch.to_dict())
+    if not is_added:
+        return JSONResponse(content='Branch not created.', status_code=500)
+    return JSONResponse(content="Branch Created Successfully.", status_code=200)
+
 # @app.exception_handler(ValidationError)
 # def validation_exception_handler(request: Request, exc: ValidationError):
 #     return JSONResponse(status_code=422, content={'detail':'Validation Failed.','Validation Errors': exc.errors()})
@@ -520,9 +528,9 @@ def get_trash():
 # def http_exception_handler(request: Request, exc: HTTPException):
 #     return JSONResponse(status_code=exc.status_code, content={'Server Error': exc.errors()})
     
-# if __name__ == "__main__":
+if __name__ == "__main__":
 #     # listener = ngrok.forward(8000, authtoken = '2jcb2Za6XtLuFkJ0GoenNZ1cNNo_3GRT9swyPEPZrC1v6wX5A')
 #     # print(listener.url())
 #     # uvicorn.run("main:app", host=listener.url(), reload= True)
-#     uvicorn.run("main:app", port=8000, reload= True)
+    uvicorn.run("main:app", port=8000, reload= True)
 

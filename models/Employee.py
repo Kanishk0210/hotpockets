@@ -19,3 +19,5 @@ class Employee(BaseModel):
     Type: str = Field(default=constants.EMPLOYEE)
     AdharCard: str
     BankDetails: BankDetail
+    Permission: str
+    Branch: str

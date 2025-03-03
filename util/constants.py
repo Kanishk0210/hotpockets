@@ -8,7 +8,7 @@ EMPLOYEE = 'Employee'
 INVENTORY = 'Inventory'
 RAWMTRL = 'RawMtrl'
 MENU = 'Menu'
-
+BRANCH = "Branch"
 # Transaction
 
 GAME_TRACKER = 'GameTracker'
