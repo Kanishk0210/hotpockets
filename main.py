@@ -73,7 +73,7 @@ def delete_target(doc_id: str):
         JSONResponse(content='Failed to Delete.', status_code=500)
     return JSONResponse(content='Successfully Deleted.', status_code=200)
 
-@app.get("/players")
+@app.get("/players", dependencies=[Depends(JWTBearer())])
 def get_players():
 
     players = fs_db.get_all(constants.PLAYER)
@@ -83,7 +83,7 @@ def get_players():
         players_res['Players'].append(player.to_dict())
     return JSONResponse(content=players_res, status_code=200)
 
-@app.post("/player")
+@app.post("/player", dependencies=[Depends(JWTBearer())])
 def add_player(player: Player):
     #chars = string.ascii_letters + string.digits
     # doc_id = 'Player::'+ player.name[:3].upper()+'_'+player.phone[-4:]+'_'+''.join(random.choices(chars, k=4)) # Player::ASH_6891_oWtp
@@ -93,14 +93,14 @@ def add_player(player: Player):
         JSONResponse(content='Failed to Add Player.', status_code=500)
     return JSONResponse(content='Successfully added Player.', status_code=201)
 
-@app.get("/games")
+@app.get("/games", dependencies=[Depends(JWTBearer())])
 def get_games():
 
     games = fs_db.get_all_games(constants.GAME)
 
     return JSONResponse(content=games, status_code=200)
 
-@app.post("/game")
+@app.post("/game", dependencies=[Depends(JWTBearer())])
 def add_game(game: Game):
     #chars = string.ascii_letters + string.digits
     # doc_id = 'Player::'+ player.name[:3].upper()+'_'+player.phone[-4:]+'_'+''.join(random.choices(chars, k=4)) # Player::ASH_6891_oWtp
@@ -110,7 +110,7 @@ def add_game(game: Game):
         JSONResponse(content='Failed to Add Game.', status_code=500)
     return JSONResponse(content='Successfully added Game.', status_code=201)
 
-@app.post("/employee")
+@app.post("/employee", dependencies=[Depends(JWTBearer())])
 def add_emp(emp: Employee):
     #chars = string.ascii_letters + string.digits
     # doc_id = 'Player::'+ player.name[:3].upper()+'_'+player.phone[-4:]+'_'+''.join(random.choices(chars, k=4)) # Player::ASH_6891_oWtp
@@ -123,7 +123,7 @@ def add_emp(emp: Employee):
         JSONResponse(content='Failed to Add Employee.', status_code=500)
     return JSONResponse(content='Successfully added Employee.', status_code=201) 
 
-@app.get("/employees")
+@app.get("/employees", dependencies=[Depends(JWTBearer())])
 def get_emps():
 
     emps = fs_db.get_all(constants.EMPLOYEE)
@@ -133,7 +133,7 @@ def get_emps():
         emp_res['Employees'].append(e.to_dict())
     return JSONResponse(content=emp_res, status_code=200)
 
-@app.post("/inventory")
+@app.post("/inventory", dependencies=[Depends(JWTBearer())])
 def add_inv(inv: Inventory):
     #chars = string.ascii_letters + string.digits
     # doc_id = 'Player::'+ player.name[:3].upper()+'_'+player.phone[-4:]+'_'+''.join(random.choices(chars, k=4)) # Player::ASH_6891_oWtp
@@ -143,7 +143,7 @@ def add_inv(inv: Inventory):
         JSONResponse(content='Failed to Add Inventory.', status_code=500)
     return JSONResponse(content='Successfully added Inventory.', status_code=201)
 
-@app.get("/inventories")
+@app.get("/inventories", dependencies=[Depends(JWTBearer())])
 def get_invs():
 
     invs = fs_db.get_all(constants.INVENTORY)
@@ -153,7 +153,7 @@ def get_invs():
         inv_res['Inventories'].append(i.to_dict())
     return JSONResponse(content=inv_res, status_code=200)
 
-@app.post("/rawMtrl")
+@app.post("/rawMtrl", dependencies=[Depends(JWTBearer())])
 def add_raw(rawMtrl: RawMtrl):
     #chars = string.ascii_letters + string.digits
     # doc_id = 'Player::'+ player.name[:3].upper()+'_'+player.phone[-4:]+'_'+''.join(random.choices(chars, k=4)) # Player::ASH_6891_oWtp
@@ -167,14 +167,14 @@ def add_raw(rawMtrl: RawMtrl):
         JSONResponse(content='Failed to Add Raw Material.', status_code=500)
     return JSONResponse(content=doc, status_code=201)
 
-@app.put("/rawMtrl/update/{doc_id}")
+@app.put("/rawMtrl/update/{doc_id}", dependencies=[Depends(JWTBearer())])
 def update_raw(doc_id: str, doc: dict):
     isUpdated = fs_db.update_rawmtrl(doc_id, doc)
     if not isUpdated:
         JSONResponse(content='Failed to Update.', status_code=500)
     return JSONResponse(content='Successfully Updated.', status_code=200)
 
-@app.get("/rawMtrls")
+@app.get("/rawMtrls", dependencies=[Depends(JWTBearer())])
 def get_raw_mtrls():
 
     rawMtrls = fs_db.get_all(constants.RAWMTRL)
@@ -184,7 +184,7 @@ def get_raw_mtrls():
         rawMtrls_res['RawMtrls'].append(rawMtrl.to_dict())
     return JSONResponse(content=rawMtrls_res, status_code=200)
 
-@app.post("/menuItem")
+@app.post("/menuItem", dependencies=[Depends(JWTBearer())])
 def add_menu_item(menu: Menu):
     #chars = string.ascii_letters + string.digits
     # doc_id = 'Player::'+ player.name[:3].upper()+'_'+player.phone[-4:]+'_'+''.join(random.choices(chars, k=4)) # Player::ASH_6891_oWtp
@@ -194,7 +194,7 @@ def add_menu_item(menu: Menu):
         JSONResponse(content='Failed to Add Menu Item.', status_code=500)
     return JSONResponse(content='Successfully added Menu Item.', status_code=200)
 
-@app.get("/menuItems")
+@app.get("/menuItems", dependencies=[Depends(JWTBearer())])
 def get_menu_items():
 
     menu_items = fs_db.get_all(constants.MENU)
@@ -206,7 +206,7 @@ def get_menu_items():
         menu_items_res['MenuItems'].append(menu)
     return JSONResponse(content=menu_items_res, status_code=200)
 
-@app.put("/update/{doc_id}")
+@app.put("/update/{doc_id}", dependencies=[Depends(JWTBearer())])
 def update(doc_id: str, doc: dict):
     print(doc_id)
     isUpdated = fs_db.update_target(doc_id, doc)
@@ -217,7 +217,7 @@ def update(doc_id: str, doc: dict):
 
 # Transaction
 
-@app.put("/trans/update/{doc_id}")
+@app.put("/trans/update/{doc_id}", dependencies=[Depends(JWTBearer())])
 def update_trans(doc_id: str, doc: dict):
     print(doc_id)
     
@@ -270,7 +270,7 @@ def update_trans(doc_id: str, doc: dict):
         JSONResponse(content='Failed to Update.', status_code=500)
     return JSONResponse(content='Successfully Updated.', status_code=200)
 
-@app.get("/game/track") 
+@app.get("/game/track", dependencies=[Depends(JWTBearer())]) 
 def get_game_trackers():
 
     gt_docs = fs_db.get_all_trans(constants.GAME_TRACKER)
@@ -280,7 +280,7 @@ def get_game_trackers():
         gt_docs_res['GameTrackers'].append(gt_doc.to_dict())
     return JSONResponse(content=gt_docs_res, status_code=200)
 
-@app.get("/game/track/active")
+@app.get("/game/track/active", dependencies=[Depends(JWTBearer())])
 def get_active_game_trackers():
 
     gt_docs = fs_db.get_active_game_trackers(constants.GAME_TRACKER)
@@ -290,7 +290,7 @@ def get_active_game_trackers():
         gt_docs_res['GameTrackers'].append(gt_doc.to_dict())
     return JSONResponse(content=gt_docs_res, status_code=200)
 
-@app.get("/game/track/{gt_id}")
+@app.get("/game/track/{gt_id}", dependencies=[Depends(JWTBearer())])
 def get_game_tracker(gt_id: str):
 
     gt_doc = fs_db.get_by_id_trans(gt_id)
@@ -298,7 +298,7 @@ def get_game_tracker(gt_id: str):
         return JSONResponse(content='Document not present in DB.', status_code=500)
     return JSONResponse(content=gt_doc, status_code=200)
 
-@app.post("/game/start")
+@app.post("/game/start", dependencies=[Depends(JWTBearer())])
 def start_game(gt_doc: GameTracker):
     #chars = string.ascii_letters + string.digits
     # doc_id = 'Player::'+ player.name[:3].upper()+'_'+player.phone[-4:]+'_'+''.join(random.choices(chars, k=4)) # Player::ASH_6891_oWtp
@@ -313,25 +313,25 @@ def start_game(gt_doc: GameTracker):
         return JSONResponse(content='Failed to Start Game.', status_code=500)
     return JSONResponse(content=doc, status_code=200)
 
-@app.get("/game/generate_bill/{gt_id}")
+@app.get("/game/generate_bill/{gt_id}", dependencies=[Depends(JWTBearer())])
 def generate_bill(gt_id: str):
     if not game.process_generate_bill(gt_id):
         return JSONResponse(content='Failed to generate bill.', status_code=500)
     return JSONResponse(content="Bill Generated successfully.", status_code=200)
 
-@app.post("/game/bill/pay/{bt_id}")
+@app.post("/game/bill/pay/{bt_id}", dependencies=[Depends(JWTBearer())])
 def pay_bill(bt_id:str, modes: dict):
     if not game.process_pay_bill(bt_id, modes, modes.pop("discount")):
         return JSONResponse(content='Failed to pay bill.', status_code=500)
     return JSONResponse(content="Bill Paid.", status_code=200)
 
-@app.post("/game/end")
+@app.post("/game/end", dependencies=[Depends(JWTBearer())])
 def end_game(gt_end: GameTrackerEndRequest):
     if not game.process_end_game(gt_end):
         return JSONResponse(content='Failed to End Game.', status_code=500)
     return JSONResponse(content="Game ended successfully.", status_code=200)
 
-@app.post("/canteen")
+@app.post("/canteen", dependencies=[Depends(JWTBearer())])
 def add_canteen(canteen_dict: CanteenTracker):
     #chars = string.ascii_letters + string.digits
     # doc_id = 'Player::'+ player.name[:3].upper()+'_'+player.phone[-4:]+'_'+''.join(random.choices(chars, k=4)) # Player::ASH_6891_oWtp
@@ -374,7 +374,7 @@ def add_canteen(canteen_dict: CanteenTracker):
         JSONResponse(content='Failed to Add Canteen', status_code=500)
     return JSONResponse(content=doc, status_code=201)
 
-@app.put("/canteen/update/{doc_id}")
+@app.put("/canteen/update/{doc_id}", dependencies=[Depends(JWTBearer())])
 def update_ct(doc_id: str, doc: dict):
     print(doc_id, doc)
 
@@ -384,21 +384,21 @@ def update_ct(doc_id: str, doc: dict):
         JSONResponse(content='Failed to Update.', status_code=500)
     return JSONResponse(content=doc_res, status_code=200)
 
-@app.post("/game/canteen/{gt_id}")
+@app.post("/game/canteen/{gt_id}", dependencies=[Depends(JWTBearer())])
 def add_game_canteen(gt_id: str, doc: dict):
     isAdded, doc = fs_db.add_game_canteen(gt_id, doc)
     if not isAdded:
         JSONResponse(content='Failed to Add.', status_code=500)
     return JSONResponse(content=doc, status_code=200)
 
-@app.post("/ind/canteen")
+@app.post("/ind/canteen", dependencies=[Depends(JWTBearer())])
 def add_ind_canteen(doc: dict):
     isAdded, doc = fs_db.add_ind_canteen(doc)
     if not isAdded:
         JSONResponse(content='Failed to Ind Add.', status_code=500)
     return JSONResponse(content=doc, status_code=200)
 
-@app.get("/ind/canteen/track")
+@app.get("/ind/canteen/track", dependencies=[Depends(JWTBearer())])
 def get_ind_canteen_trackers():
 
     ct_docs = fs_db.get_all_ind_canteen()
@@ -408,13 +408,13 @@ def get_ind_canteen_trackers():
         ct_docs_res['CanteenTrackers'].append(ct_doc.to_dict())
     return JSONResponse(content=ct_docs_res, status_code=200)
 
-@app.get("/ind/canteen/generate_bill/{ct_id}")
+@app.get("/ind/canteen/generate_bill/{ct_id}", dependencies=[Depends(JWTBearer())])
 def ind_canteen_generate_bill(ct_id: str):
     if not game.process_ind_canteen_generate_bill(ct_id):
         return JSONResponse(content='Failed to generate bill.', status_code=500)
     return JSONResponse(content="Bill Generated successfully.", status_code=200)
 
-@app.get("/canteen/track")
+@app.get("/canteen/track", dependencies=[Depends(JWTBearer())])
 def get_canteen_trackers():
 
     ct_docs = fs_db.get_all(constants.CANTEEN_TRACKER)
@@ -431,7 +431,7 @@ def get_canteen_trackers():
 
 #     return JSONResponse(content=ct_doc, status_code=200)
 
-@app.get("/canteen/track/{gt_id}")
+@app.get("/canteen/track/{gt_id}", dependencies=[Depends(JWTBearer())])
 def get_canteen_tracker_by_gt_id(gt_id: str):
 
     ct_docs = fs_db.get_ct_by_gt_id(gt_id)
@@ -440,7 +440,7 @@ def get_canteen_tracker_by_gt_id(gt_id: str):
         ct_doc = ct_doc.to_dict()
     return JSONResponse(content=ct_doc, status_code=200)
 
-@app.put("/game/update/{doc_id}")
+@app.put("/game/update/{doc_id}", dependencies=[Depends(JWTBearer())])
 def update_game(doc_id: str, doc: dict):
     print(doc_id)
     isUpdated = fs_db.update_trans(doc_id, doc)
@@ -449,14 +449,14 @@ def update_game(doc_id: str, doc: dict):
         JSONResponse(content='Failed to Update.', status_code=500)
     return JSONResponse(content='Successfully Updated.', status_code=200)
 
-@app.get("/game/bills")
+@app.get("/game/bills", dependencies=[Depends(JWTBearer())])
 def get_game_all_bills():
 
     bt_docs = fs_db.get_all_plyr_bills(False)
 
     return JSONResponse(content=bt_docs, status_code=200)
 
-@app.get("/game/bills/pending")
+@app.get("/game/bills/pending", dependencies=[Depends(JWTBearer())])
 def get_game_all_pending_bills():
     try:
 
@@ -469,18 +469,18 @@ def get_game_all_pending_bills():
         print(e)
     return JSONResponse(content=bt_docs_res, status_code=200)
 
-@app.get("/game/closed_not_billed")
+@app.get("/game/closed_not_billed", dependencies=[Depends(JWTBearer())])
 def get_closed_not_billed_games():
     docs = fs_db.get_closed_not_billed_games()
     return JSONResponse(content=docs, status_code=200)
 
-@app.get("/game/bills/paid")
+@app.get("/game/bills/paid", dependencies=[Depends(JWTBearer())])
 def get_game_paid_bills():
 
     bt_docs = fs_db.get_all_plyr_bills(True)
     return JSONResponse(content=bt_docs, status_code=200)
 
-@app.get("/dailycollections")
+@app.get("/dailycollections", dependencies=[Depends(JWTBearer())])
 def get_daily_collections():
     dc_docs = fs_db.get_all_trans(constants.DAILY_COLLECT)
 
@@ -489,7 +489,7 @@ def get_daily_collections():
         dc_docs_res['DailyCollections'].append(dc_doc.to_dict())
     return JSONResponse(content=dc_docs_res, status_code=200)
 
-@app.post("/dailycollect")
+@app.post("/dailycollect", dependencies=[Depends(JWTBearer())])
 def save_dailycollect(dailyCollect: DailyCollect):
     isAdded, dc = fs_db.add_dailycollect(dailyCollect.dict())
     isUpdated = daily_collect.update_safe(dc)
@@ -499,35 +499,35 @@ def save_dailycollect(dailyCollect: DailyCollect):
         JSONResponse(content='Failed to Update Safe.', status_code=500)
     return JSONResponse(content='Successfully added DailyCollect.', status_code=201)
 
-@app.get("/safe")
+@app.get("/safe", dependencies=[Depends(JWTBearer())])
 def get_safe():
     safe = fs_db.get_safe()
     if safe is None:
         return JSONResponse(content='Document not present in DB.', status_code=500)
     return JSONResponse(content=safe, status_code=200)
 
-@app.post("/trash")
+@app.post("/trash", dependencies=[Depends(JWTBearer())])
 def trash(itm: dict):
     is_trashed = fs_db.trash(itm)
     if not is_trashed:
         JSONResponse(content='Failed to Update Trash.', status_code=500)
     return JSONResponse(content='Successfully Updated Trash.', status_code=200)
 
-@app.get("/trash")
+@app.get("/trash", dependencies=[Depends(JWTBearer())])
 def get_trash():
     trash = fs_db.get_trash()
     if trash is None:
         return JSONResponse(content='Document not present in DB.', status_code=500)
     return JSONResponse(content=trash, status_code=200)
 
-@app.post("/branch")
+@app.post("/branch", dependencies=[Depends(JWTBearer())])
 def add_branch(branch: Branch):
     is_added = fs_db.add_branch(branch.dict())
     if not is_added:
         return JSONResponse(content='Branch not created.', status_code=500)
     return JSONResponse(content="Branch Created Successfully.", status_code=200)
 
-@app.get("/branches")
+@app.get("/branches", dependencies=[Depends(JWTBearer())])
 def get_all_branches():
     branches = fs_db.get_all(constants.BRANCH)
     branches_res = {'Branches':[]}
