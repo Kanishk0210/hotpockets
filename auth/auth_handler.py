@@ -5,8 +5,8 @@ from typing import Dict
 import jwt
 
 
-JWT_SECRET = ""
-JWT_ALGORITHM = ""
+JWT_SECRET = '4b925c51afbef8811ade4ab8e669a7e9'
+JWT_ALGORITHM = "HS256"
 
 
 def token_response(token: str):
