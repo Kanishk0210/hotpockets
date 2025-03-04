@@ -53,7 +53,7 @@ def check_user(data: UserLoginSchema):
             return True
     return False
 
-@app.get("/")
+@app.get("/", dependencies= [Depends(JWTBearer())] ,tags=["root"])
 async def root():
     return {"message": "Hot Pockets"}
 
@@ -65,7 +65,7 @@ def user_login(user: UserLoginSchema = Body(...)):
         "error": "Wrong login details!"
     }
 
-@app.delete("/delete/{doc_id}")
+@app.delete("/delete/{doc_id}", dependencies=[Depends(JWTBearer())])
 def delete_target(doc_id: str):
     isDeleted = fs_db.delete_target(doc_id)
     
