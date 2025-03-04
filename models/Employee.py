@@ -21,3 +21,4 @@ class Employee(BaseModel):
     BankDetails: BankDetail
     Permission: str
     Branch: str
+    Password: str

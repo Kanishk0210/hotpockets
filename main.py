@@ -1,5 +1,6 @@
 import random
 import string
+import base64
 # import ngrok
 
 from fastapi import FastAPI, APIRouter, Body, Depends
@@ -44,8 +45,11 @@ app.add_middleware(
 )
 
 def check_user(data: UserLoginSchema):
-    for user in users:
-        if user.email == data.email and user.password == data.password:
+    users = fs_db.get_all(constants.EMPLOYEE)
+    for usr in users:
+        user = usr.to_dict()
+        user_dec_pass = util.decode_pass(user["Password"])
+        if user["Email"] == data.email and user_dec_pass == data.password:
             return True
     return False
 
@@ -110,6 +114,9 @@ def add_game(game: Game):
 def add_emp(emp: Employee):
     #chars = string.ascii_letters + string.digits
     # doc_id = 'Player::'+ player.name[:3].upper()+'_'+player.phone[-4:]+'_'+''.join(random.choices(chars, k=4)) # Player::ASH_6891_oWtp
+
+    emp.Password = util.encode_pass(emp.Password)
+
     isAdded = fs_db.add(constants.EMPLOYEE, emp.dict())
 
     if not isAdded:

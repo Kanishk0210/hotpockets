@@ -1,5 +1,7 @@
 from datetime import datetime
 import zulu
+import base64
+
 
 def get_current_tmstmp_str():
     return str(zulu.now().format('%Y-%m-%d %H:%M:%S', tz ='local'))
@@ -22,3 +24,22 @@ def get_duration(strt: str, end: str, cancel_t):
     return round_off_dur
 
 # get_duration("2024-08-29 02:00:00", "2024-08-29 03:00:00")
+
+
+def encode_pass(pass_str: str):
+    sample_string = pass_str
+    sample_string_bytes = sample_string.encode("ascii")
+
+    base64_bytes = base64.b64encode(sample_string_bytes)
+    base64_string = base64_bytes.decode("ascii")
+
+    return base64_string
+
+def decode_pass(pass_str: str):
+    base64_string = pass_str
+    base64_bytes = base64_string.encode("ascii")
+
+    sample_string_bytes = base64.b64decode(base64_bytes)
+    sample_string = sample_string_bytes.decode("ascii")
+
+    return sample_string
