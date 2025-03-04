@@ -52,7 +52,7 @@ def create_collection(coll_name: str):
     doc_ref = store.collection(coll_name).document(coll_name+"::0")
     doc_ref.set({
         "Id": coll_name+"::0",
-        constants.CREATEDTMSTMP: util.get_current_tmstmp_str
+        constants.CREATEDTMSTMP: util.get_current_tmstmp_str()
     })
     print("Collection "+ coll_name + " created")
 
@@ -591,6 +591,7 @@ def add_branch(branch_pld: dict):
     create_collection(branch_pld["Name"]+"-transaction-data")
 
     return True
+
 
 # def get_next_id_transactional():
 #     with store.transaction() as transaction:

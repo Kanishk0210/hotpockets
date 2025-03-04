@@ -515,10 +515,19 @@ def get_trash():
 
 @app.post("/branch")
 def add_branch(branch: Branch):
-    is_added = fs_db.add_branch(branch.to_dict())
+    is_added = fs_db.add_branch(branch.dict())
     if not is_added:
         return JSONResponse(content='Branch not created.', status_code=500)
     return JSONResponse(content="Branch Created Successfully.", status_code=200)
+
+@app.get("/branches")
+def get_all_branches():
+    branches = fs_db.get_all(constants.BRANCH)
+    branches_res = {'Branches':[]}
+    for branch in branches:
+        branches_res['Branches'].append(branch.to_dict())
+    return JSONResponse(content=branches_res, status_code=200)
+
 
 # @app.exception_handler(ValidationError)
 # def validation_exception_handler(request: Request, exc: ValidationError):
