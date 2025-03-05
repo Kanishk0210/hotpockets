@@ -7,234 +7,371 @@ from google.cloud.firestore_v1.base_query import FieldFilter
 from util import util, constants
 import sys
 
-cred = credentials.Certificate('resources/hotpockets-test-firebase-adminsdk-4gr44-d3d84f282d.json')
+class FirebaseConn():
 
-#cred = credentials.Certificate('resources/firebasse-adminsdk-prod.json')
+    target_coll_str = 'masterdata-target'
+    source_coll_str = 'masterdata-source'
+    trans_coll_str = 'transaction-data'
 
-firebase_app = firebase_admin.initialize_app(cred)
+    def __init__(self, br_cd):
+        self.target_coll_str = br_cd+'masterdata-target'
+        self.source_coll_str = br_cd+'masterdata-source'
+        self.trans_coll_str = br_cd+'transaction-data'
 
-store = firestore.client()
+    cred = credentials.Certificate('resources/hotpockets-test-firebase-adminsdk-4gr44-d3d84f282d.json')
 
-target_coll_str = 'masterdata-target'
-source_coll_str = 'masterdata-source'
-trans_coll_str = 'transaction-data'
+    #cred = credentials.Certificate('resources/firebasse-adminsdk-prod.json')
 
-player_counter_id = 'player_counter'
-game_counter_id = 'game_counter'
-emp_counter_id = 'emp_counter'
-inv_counter_id = 'inv_counter'
-rawMtrl_counter_id = 'rawMtrl_counter'
-menu_item_counter_id = 'menu_item_counter'
-game_tracker_counter_id = 'game_tracker_counter'
-bill_tracker_counter_id = 'bill_tracker_counter'
-canteen_tracker_counter_id = 'canteen_tracker_counter'
-branch_counter_id = 'branch_counter'
+    firebase_app = firebase_admin.initialize_app(cred)
 
-target_coll = store.collection(target_coll_str)
-source_coll = store.collection(source_coll_str)
-trans_coll = store.collection(trans_coll_str)
+    store = firestore.client()
 
-player_counter_ref = source_coll.document(player_counter_id)
-game_counter_ref = source_coll.document(game_counter_id)
-emp_counter_ref = source_coll.document(emp_counter_id)
-inv_counter_ref = source_coll.document(inv_counter_id)
-rawMtrl_counter_ref = source_coll.document(rawMtrl_counter_id)
-menu_item_counter_ref = source_coll.document(menu_item_counter_id)
-game_tracker_counter_ref = source_coll.document(game_tracker_counter_id)
-bill_tracker_counter_ref = source_coll.document(bill_tracker_counter_id)
-canteen_tracker_counter_ref = source_coll.document(canteen_tracker_counter_id)
-branch_counter_ref = source_coll.document(branch_counter_id)
+    player_counter_id = 'player_counter'
+    game_counter_id = 'game_counter'
+    emp_counter_id = 'emp_counter'
+    inv_counter_id = 'inv_counter'
+    rawMtrl_counter_id = 'rawMtrl_counter'
+    menu_item_counter_id = 'menu_item_counter'
+    game_tracker_counter_id = 'game_tracker_counter'
+    bill_tracker_counter_id = 'bill_tracker_counter'
+    canteen_tracker_counter_id = 'canteen_tracker_counter'
+    branch_counter_id = 'branch_counter'
 
-# admin
+    target_coll = store.collection(target_coll_str)
+    source_coll = store.collection(source_coll_str)
+    trans_coll = store.collection(trans_coll_str)
 
-# create collection
-def create_collection(coll_name: str):
-    doc_ref = store.collection(coll_name).document(coll_name+"::0")
-    doc_ref.set({
-        "Id": coll_name+"::0",
-        constants.CREATEDTMSTMP: util.get_current_tmstmp_str()
-    })
-    print("Collection "+ coll_name + " created")
+    player_counter_ref = source_coll.document(player_counter_id)
+    game_counter_ref = source_coll.document(game_counter_id)
+    emp_counter_ref = source_coll.document(emp_counter_id)
+    inv_counter_ref = source_coll.document(inv_counter_id)
+    rawMtrl_counter_ref = source_coll.document(rawMtrl_counter_id)
+    menu_item_counter_ref = source_coll.document(menu_item_counter_id)
+    game_tracker_counter_ref = source_coll.document(game_tracker_counter_id)
+    bill_tracker_counter_ref = source_coll.document(bill_tracker_counter_id)
+    canteen_tracker_counter_ref = source_coll.document(canteen_tracker_counter_id)
+    branch_counter_ref = source_coll.document(branch_counter_id)
 
+    # admin
 
-# source
-def add_dailycollect(dc: dict):
-    doc_id = constants.DAILY_COLLECT+'::'+dc.get("CurrentCollectTmstmp")
-    dc[constants.ID] = doc_id
-    dc[constants.MDFDTMSTMP] = dc.get("CurrentCollectTmstmp")
-    dc[constants.CREATEDTMSTMP] = dc.get("CurrentCollectTmstmp")
-    trans_coll.add(dc, doc_id)
-    return True, dc
-
-def get_safe():
-    return source_coll.document(constants.SAFE_ID).get().to_dict()
-
-def update_safe(doc_id: str, doc: dict):
-    doc_ref = source_coll.document(doc_id)
-    
-    doc_ref.update(doc)
-    return True
-
-# target
-
-def get_counter_ref(typ: str):
-    if typ == constants.MENU:
-        return menu_item_counter_ref
-    if typ == constants.INVENTORY:
-        return inv_counter_ref
-    if typ == constants.PLAYER:
-        return player_counter_ref
-    if typ == constants.GAME:
-        return game_counter_ref
-    if typ == constants.EMPLOYEE:
-        return emp_counter_ref
-    if typ == constants.RAWMTRL:
-        return rawMtrl_counter_ref
-    if typ == constants.GAME_TRACKER:
-        return game_tracker_counter_ref
-    if typ == constants.BILL_TRACKER:
-        return bill_tracker_counter_ref
-    if typ == constants.CANTEEN_TRACKER:
-        return canteen_tracker_counter_ref
-    if typ == constants.BRANCH:
-        return branch_counter_ref
-    raise Exception
-
-def get_next_id(typ: str):
-    counter_ref = get_counter_ref(typ)
-    next_id = int(counter_ref.get().to_dict()[constants.CURRENTID]) + 1
-    counter_ref.update({constants.CURRENTID: next_id, constants.MDFDTMSTMP: util.get_current_tmstmp_str()})
-    return next_id
-
-def get_all(typ: str):
-    query = target_coll.where(filter=FieldFilter('Type','==',typ))
-    return query.stream()
-
-def get_by_id(doc_id: str):
-    return target_coll.document(doc_id).get().to_dict()
-
-def get_ct_by_gt_id(gt_id: str):
-    query = trans_coll.where(filter=FieldFilter('Type','==',constants.CANTEEN_TRACKER)).where(filter=FieldFilter('isActive','==', True)).where(filter=FieldFilter('GameTrackerId','==',gt_id))
-    res = query.stream()
-    print(res)
-    return res
-
-def add(typ: str, doc: dict):
-    doc_id = typ+'::'+str(get_next_id(typ))
-    doc[constants.ID] = doc_id
-    doc[constants.MDFDTMSTMP] = util.get_current_tmstmp_str()
-    doc[constants.CREATEDTMSTMP] = util.get_current_tmstmp_str()
-    target_coll.add(doc, doc_id)
-    return True, doc
-
-def update(doc_id: str, doc: dict):
-    doc_ref = target_coll.document(doc_id)
-    doc[constants.MDFDTMSTMP] = util.get_current_tmstmp_str()
-    doc_ref.update(doc)
-    return True
-
-def update_rawmtrl(doc_id: str, doc: dict):
-    doc_ref = target_coll.document(doc_id)
-    ex_doc = doc_ref.get().to_dict()
-    ex_doc[constants.MDFDTMSTMP] = util.get_current_tmstmp_str()
-    ex_doc["QuantityBox"] = ex_doc["QuantityBox"] + doc["QuantityBox"]
-    ex_doc["Quantity"] = ex_doc["Quantity"] + doc["QuantityBox"]*ex_doc["QuantityPerBox"]
-    doc_ref.update(ex_doc)
-    return True
-
-def delete_target(doc_id: str):
-    doc_ref = target_coll.document(doc_id)
-    doc_ref.delete()
-    return True
-
-# Transaction
-
-def add_trans(typ: str, doc: dict):
-    doc_id = typ+'::'+str(get_next_id(typ))
-    doc[constants.ID] = doc_id
-    doc[constants.MDFDTMSTMP] = util.get_current_tmstmp_str()
-    doc[constants.CREATEDTMSTMP] = util.get_current_tmstmp_str()
-    trans_coll.add(doc, doc_id)
-    return True, doc
-
-def get_all_trans(typ: str):
-    query = trans_coll.where('Type','==',typ)
-    return query.stream()
-
-def get_by_id_trans(doc_id: str):
-    return trans_coll.document(doc_id).get().to_dict()
-
-def start_game(doc: dict):
-    typ = constants.GAME_TRACKER
-
-    # duplicate check
-    query = trans_coll.where('Type','==',typ).where('GameId','==',doc.get('GameId')).where('isActive','==',True)
-    dup_docs = query.stream()
-    count = sum(1 for d in dup_docs)
-    if count >0:
-        return False, doc
-
-    doc_id = typ+'::'+str(get_next_id(typ))
-    doc[constants.ID] = doc_id
-    doc[constants.MDFDTMSTMP] = util.get_current_tmstmp_str()
-    doc[constants.CREATEDTMSTMP] = util.get_current_tmstmp_str()
-    trans_coll.add(doc, doc_id)
-    return True, doc
-
-def update_target(doc_id: str, doc: dict):
-    doc_ref = target_coll.document(doc_id)
-    doc[constants.MDFDTMSTMP] = util.get_current_tmstmp_str()
-    doc_ref.update(doc)
-    return True, doc
-
-def update_trans(doc_id: str, doc: dict):
-    doc_ref = trans_coll.document(doc_id)
-    doc[constants.MDFDTMSTMP] = util.get_current_tmstmp_str()
-    doc_ref.update(doc)
-    return True, doc
-
-def add_game_canteen(gt_id: str, doc: dict):
-    gt_doc_ref = trans_coll.document(gt_id)
-    gt_doc = gt_doc_ref.get().to_dict()
-    isNew = False
-    if gt_doc["CanteenTrackerId"] == None:
-        gt_doc["CanteenTrackerId"] = constants.CANTEEN_TRACKER +'::'+str(get_next_id(constants.CANTEEN_TRACKER))
-        ex_ct_doc = {
-            constants.MDFDTMSTMP: util.get_current_tmstmp_str(),
-            constants.CREATEDTMSTMP: util.get_current_tmstmp_str(),
-            constants.ID: gt_doc["CanteenTrackerId"],
-            "Type": constants.CANTEEN_TRACKER,
-            "GameId": gt_doc["GameId"],
-            "GameTrackerId": gt_id,
-            "TxId": None,
-            "isActive": True,
-            "isBilled": False,
-            "isCancelled": False,
-            "MenuItems": [],
-            "Players": [],
-            "Cost": 0
+    def setup_source(self, coll):
+        #safe
+        safe_doc_id = "Safe"
+        safe_doc = {
+            "AvailableCash": 0,
+            "CurrentCollectTmstmp": "",
+            "Id": "Safe",
+            "LastCollectTmstmp": "",
+            "LastDailyCollectId": "",
+            "MdfdById": "Svc/Create",
+            "MdfdTmstmp": ""
         }
-        isNew = True
-    else:
-        ex_ct_doc_ref = trans_coll.document(gt_doc["CanteenTrackerId"])
-        ex_ct_doc = ex_ct_doc_ref.get().to_dict()
+        coll.add(safe_doc, safe_doc_id)
 
-    if doc["PlayerId"] == None:
-        for mitem_to_add in doc["MenuItems"]:
-            found = False
-            for mitem in ex_ct_doc["MenuItems"]:
-                if mitem["Id"] == mitem_to_add["Id"]:
-                    mitem["Quan"] += mitem_to_add["Quan"]
+        #counters:
+        
+        counter_doc = {
+            "CurrentId": 0
+        }
+
+        #bill_tracker_counter
+        coll.add(counter_doc, self.bill_tracker_counter_id)
+
+        #canteen_tracker_counter
+        coll.add(counter_doc, self.canteen_tracker_counter_id)
+
+        #game_tracker_counter
+        coll.add(counter_doc, self.game_tracker_counter_id)
+
+        #menu_item_counter
+        coll.add(counter_doc, self.menu_item_counter_id)
+
+        #rawMtrl_counter
+        coll.add(counter_doc, self.rawMtrl_counter_id)
+
+        #inv_counter
+        coll.add(counter_doc, self.inv_counter_id)
+
+        #emp_counter
+        coll.add(counter_doc, self.emp_counter_id)
+
+        #game_counter
+        coll.add(counter_doc, self.game_counter_id)
+
+        #player_counter
+        coll.add(counter_doc, self.player_counter_id)
+
+
+    # create collection
+    def create_collection(self, coll_name: str):
+
+        if "source" in coll_name:
+            doc_ref = self.store.collection(coll_name).document(coll_name+"::0")
+            doc_ref.set({
+                "Id": coll_name+"::0",
+                constants.CREATEDTMSTMP: util.get_current_tmstmp_str()
+            })
+            self.setup_source(self.store.collection(coll_name))
+
+            print("Collection "+ coll_name + " created")
+
+        doc_ref = self.store.collection(coll_name).document(coll_name+"::0")
+        doc_ref.set({
+            "Id": coll_name+"::0",
+            constants.CREATEDTMSTMP: util.get_current_tmstmp_str()
+        })
+        print("Collection "+ coll_name + " created")
+
+
+    # source
+    def add_dailycollect(self, dc: dict):
+        doc_id = constants.DAILY_COLLECT+'::'+dc.get("CurrentCollectTmstmp")
+        dc[constants.ID] = doc_id
+        dc[constants.MDFDTMSTMP] = dc.get("CurrentCollectTmstmp")
+        dc[constants.CREATEDTMSTMP] = dc.get("CurrentCollectTmstmp")
+        self.trans_coll.add(dc, doc_id)
+        return True, dc
+
+    def get_safe(self):
+        return self.source_coll.document(constants.SAFE_ID).get().to_dict()
+
+    def update_safe(self, doc_id: str, doc: dict):
+        doc_ref = self.source_coll.document(doc_id)
+        
+        doc_ref.update(doc)
+        return True
+
+    # target
+
+    def get_counter_ref(self, typ: str):
+        if typ == constants.MENU:
+            return self.menu_item_counter_ref
+        if typ == constants.INVENTORY:
+            return self.inv_counter_ref
+        if typ == constants.PLAYER:
+            return self.player_counter_ref
+        if typ == constants.GAME:
+            return self.game_counter_ref
+        if typ == constants.EMPLOYEE:
+            return self.emp_counter_ref
+        if typ == constants.RAWMTRL:
+            return self.rawMtrl_counter_ref
+        if typ == constants.GAME_TRACKER:
+            return self.game_tracker_counter_ref
+        if typ == constants.BILL_TRACKER:
+            return self.bill_tracker_counter_ref
+        if typ == constants.CANTEEN_TRACKER:
+            return self.canteen_tracker_counter_ref
+        if typ == constants.BRANCH:
+            return self.branch_counter_ref
+        raise Exception
+
+    def get_next_id(self, typ: str):
+        counter_ref = self.get_counter_ref(typ)
+        next_id = int(counter_ref.get().to_dict()[constants.CURRENTID]) + 1
+        counter_ref.update({constants.CURRENTID: next_id, constants.MDFDTMSTMP: util.get_current_tmstmp_str()})
+        return next_id
+
+    def get_all(self, typ: str):
+        query = self.target_coll.where(filter=FieldFilter('Type','==',typ))
+        return query.stream()
+
+    def get_by_id(self, doc_id: str):
+        return self.target_coll.document(doc_id).get().to_dict()
+
+    def get_ct_by_gt_id(self, gt_id: str):
+        query = self.trans_coll.where(filter=FieldFilter('Type','==',constants.CANTEEN_TRACKER)).where(filter=FieldFilter('isActive','==', True)).where(filter=FieldFilter('GameTrackerId','==',gt_id))
+        res = query.stream()
+        print(res)
+        return res
+
+    def add(self, typ: str, doc: dict):
+        doc_id = typ+'::'+str(self.get_next_id(typ))
+        doc[constants.ID] = doc_id
+        doc[constants.MDFDTMSTMP] = util.get_current_tmstmp_str()
+        doc[constants.CREATEDTMSTMP] = util.get_current_tmstmp_str()
+        self.target_coll.add(doc, doc_id)
+        return True, doc
+
+    def update(self, doc_id: str, doc: dict):
+        doc_ref = self.target_coll.document(doc_id)
+        doc[constants.MDFDTMSTMP] = util.get_current_tmstmp_str()
+        doc_ref.update(doc)
+        return True
+
+    def update_rawmtrl(self, doc_id: str, doc: dict):
+        doc_ref = self.target_coll.document(doc_id)
+        ex_doc = doc_ref.get().to_dict()
+        ex_doc[constants.MDFDTMSTMP] = util.get_current_tmstmp_str()
+        ex_doc["QuantityBox"] = ex_doc["QuantityBox"] + doc["QuantityBox"]
+        ex_doc["Quantity"] = ex_doc["Quantity"] + doc["QuantityBox"]*ex_doc["QuantityPerBox"]
+        doc_ref.update(ex_doc)
+        return True
+
+    def delete_target(self, doc_id: str):
+        doc_ref = self.target_coll.document(doc_id)
+        doc_ref.delete()
+        return True
+
+    # Transaction
+
+    def add_trans(self, typ: str, doc: dict):
+        doc_id = typ+'::'+str(self.get_next_id(typ))
+        doc[constants.ID] = doc_id
+        doc[constants.MDFDTMSTMP] = util.get_current_tmstmp_str()
+        doc[constants.CREATEDTMSTMP] = util.get_current_tmstmp_str()
+        self.trans_coll.add(doc, doc_id)
+        return True, doc
+
+    def get_all_trans(self, typ: str):
+        query = self.trans_coll.where('Type','==',typ)
+        return query.stream()
+
+    def get_by_id_trans(self, doc_id: str):
+        return self.trans_coll.document(doc_id).get().to_dict()
+
+    def start_game(self, doc: dict):
+        typ = constants.GAME_TRACKER
+
+        # duplicate check
+        query = self.trans_coll.where('Type','==',typ).where('GameId','==',doc.get('GameId')).where('isActive','==',True)
+        dup_docs = query.stream()
+        count = sum(1 for d in dup_docs)
+        if count >0:
+            return False, doc
+
+        doc_id = typ+'::'+str(self.get_next_id(typ))
+        doc[constants.ID] = doc_id
+        doc[constants.MDFDTMSTMP] = util.get_current_tmstmp_str()
+        doc[constants.CREATEDTMSTMP] = util.get_current_tmstmp_str()
+        self.trans_coll.add(doc, doc_id)
+        return True, doc
+
+    def update_target(self, doc_id: str, doc: dict):
+        doc_ref = self.target_coll.document(doc_id)
+        doc[constants.MDFDTMSTMP] = util.get_current_tmstmp_str()
+        doc_ref.update(doc)
+        return True, doc
+
+    def update_trans(self, doc_id: str, doc: dict):
+        doc_ref = self.trans_coll.document(doc_id)
+        doc[constants.MDFDTMSTMP] = util.get_current_tmstmp_str()
+        doc_ref.update(doc)
+        return True, doc
+
+    def add_game_canteen(self, gt_id: str, doc: dict):
+        gt_doc_ref = self.trans_coll.document(gt_id)
+        gt_doc = gt_doc_ref.get().to_dict()
+        isNew = False
+        if gt_doc["CanteenTrackerId"] == None:
+            gt_doc["CanteenTrackerId"] = constants.CANTEEN_TRACKER +'::'+str(self.get_next_id(constants.CANTEEN_TRACKER))
+            ex_ct_doc = {
+                constants.MDFDTMSTMP: util.get_current_tmstmp_str(),
+                constants.CREATEDTMSTMP: util.get_current_tmstmp_str(),
+                constants.ID: gt_doc["CanteenTrackerId"],
+                "Type": constants.CANTEEN_TRACKER,
+                "GameId": gt_doc["GameId"],
+                "GameTrackerId": gt_id,
+                "TxId": None,
+                "isActive": True,
+                "isBilled": False,
+                "isCancelled": False,
+                "MenuItems": [],
+                "Players": [],
+                "Cost": 0
+            }
+            isNew = True
+        else:
+            ex_ct_doc_ref = self.trans_coll.document(gt_doc["CanteenTrackerId"])
+            ex_ct_doc = ex_ct_doc_ref.get().to_dict()
+
+        if doc["PlayerId"] == None:
+            for mitem_to_add in doc["MenuItems"]:
+                found = False
+                for mitem in ex_ct_doc["MenuItems"]:
+                    if mitem["Id"] == mitem_to_add["Id"]:
+                        mitem["Quan"] += mitem_to_add["Quan"]
+                        ex_ct_doc["Cost"] += mitem_to_add["Cost"] * mitem_to_add["Quan"]
+                        found = True
+                        break
+                if not found:
+                    mitem_to_add_doc = self.get_by_id(mitem_to_add["Id"])
+                    mitem_to_add["Cost"] = mitem_to_add_doc["Price"]
+                    mitem_to_add["Name"] = mitem_to_add_doc["Name"]
                     ex_ct_doc["Cost"] += mitem_to_add["Cost"] * mitem_to_add["Quan"]
-                    found = True
-                    break
-            if not found:
-                mitem_to_add_doc = get_by_id(mitem_to_add["Id"])
-                mitem_to_add["Cost"] = mitem_to_add_doc["Price"]
-                mitem_to_add["Name"] = mitem_to_add_doc["Name"]
-                ex_ct_doc["Cost"] += mitem_to_add["Cost"] * mitem_to_add["Quan"]
-                ex_ct_doc["MenuItems"].append(mitem_to_add)
-    else:
+                    ex_ct_doc["MenuItems"].append(mitem_to_add)
+        else:
+            plyrFound = False
+            player = {}
+            for plyr in ex_ct_doc["Players"]:
+                if plyr["Id"] == doc["PlayerId"]:
+                    plyrFound = True
+                    player = plyr
+            
+            if not plyrFound:
+                plyr_doc = self.get_by_id(doc["PlayerId"])
+                player = {
+                    "Id": plyr_doc["Id"],
+                    "Name": plyr_doc["Name"],
+                    "MenuItems": [],
+                    "Cost": 0
+                }
+
+            for mitem_to_add in doc["MenuItems"]:
+                found = False
+                for mitem in player["MenuItems"]:
+                    if mitem["Id"] == mitem_to_add["Id"]:
+                        mitem["Quan"] += mitem_to_add["Quan"]
+                        player["Cost"] += mitem["Cost"] * mitem_to_add["Quan"]
+                        ex_ct_doc["Cost"] += mitem["Cost"] * mitem_to_add["Quan"]
+                        found = True
+                        break
+                if not found:
+                    mitem_to_add_doc = self.get_by_id(mitem_to_add["Id"])
+                    mitem_to_add["Cost"] = mitem_to_add_doc["Price"]
+                    mitem_to_add["Name"] = mitem_to_add_doc["Name"]
+                    player["MenuItems"].append(mitem_to_add)
+                    player["Cost"] += mitem_to_add["Cost"] * mitem_to_add["Quan"]
+                    ex_ct_doc["Cost"] += mitem_to_add["Cost"] * mitem_to_add["Quan"]
+            
+            if not plyrFound:
+                ex_ct_doc["Players"].append(player)
+
+        if isNew:
+            self.trans_coll.add(ex_ct_doc, ex_ct_doc["Id"])
+        else:
+            ex_ct_doc_ref.update(ex_ct_doc)
+        
+        gt_doc["CanteenTrackerId"] = ex_ct_doc["Id"]
+        gt_doc_ref.update(gt_doc)
+
+        self.update_stock(doc)
+        return True, ex_ct_doc
+
+    def add_ind_canteen(self, doc: dict):
+        isNew = False
+        if doc["Id"] == None:
+            ct_id = constants.CANTEEN_TRACKER +'::'+str(self.get_next_id(constants.CANTEEN_TRACKER))
+            ex_ct_doc = {
+                constants.MDFDTMSTMP: util.get_current_tmstmp_str(),
+                constants.CREATEDTMSTMP: util.get_current_tmstmp_str(),
+                constants.ID: ct_id,
+                "Type": constants.CANTEEN_TRACKER,
+                "GameId": None,
+                "GameTrackerId": None,
+                "TxId": None,
+                "isActive": True,
+                "isBilled": False,
+                "isCancelled": False,
+                "MenuItems": [],
+                "Players": [],
+                "Cost": 0
+            }
+            isNew = True
+        else:
+            ex_ct_doc_ref = self.trans_coll.document(doc["Id"])
+            ex_ct_doc = ex_ct_doc_ref.get().to_dict()
+
         plyrFound = False
         player = {}
         for plyr in ex_ct_doc["Players"]:
@@ -243,7 +380,7 @@ def add_game_canteen(gt_id: str, doc: dict):
                 player = plyr
         
         if not plyrFound:
-            plyr_doc = get_by_id(doc["PlayerId"])
+            plyr_doc = self.get_by_id(doc["PlayerId"])
             player = {
                 "Id": plyr_doc["Id"],
                 "Name": plyr_doc["Name"],
@@ -261,7 +398,7 @@ def add_game_canteen(gt_id: str, doc: dict):
                     found = True
                     break
             if not found:
-                mitem_to_add_doc = get_by_id(mitem_to_add["Id"])
+                mitem_to_add_doc = self.get_by_id(mitem_to_add["Id"])
                 mitem_to_add["Cost"] = mitem_to_add_doc["Price"]
                 mitem_to_add["Name"] = mitem_to_add_doc["Name"]
                 player["MenuItems"].append(mitem_to_add)
@@ -271,336 +408,265 @@ def add_game_canteen(gt_id: str, doc: dict):
         if not plyrFound:
             ex_ct_doc["Players"].append(player)
 
-    if isNew:
-        trans_coll.add(ex_ct_doc, ex_ct_doc["Id"])
-    else:
-        ex_ct_doc_ref.update(ex_ct_doc)
-    
-    gt_doc["CanteenTrackerId"] = ex_ct_doc["Id"]
-    gt_doc_ref.update(gt_doc)
+        if isNew:
+            self.trans_coll.add(ex_ct_doc, ex_ct_doc["Id"])
+        else:
+            ex_ct_doc_ref.update(ex_ct_doc)
 
-    update_stock(doc)
-    return True, ex_ct_doc
-
-def add_ind_canteen(doc: dict):
-    isNew = False
-    if doc["Id"] == None:
-        ct_id = constants.CANTEEN_TRACKER +'::'+str(get_next_id(constants.CANTEEN_TRACKER))
-        ex_ct_doc = {
-            constants.MDFDTMSTMP: util.get_current_tmstmp_str(),
-            constants.CREATEDTMSTMP: util.get_current_tmstmp_str(),
-            constants.ID: ct_id,
-            "Type": constants.CANTEEN_TRACKER,
-            "GameId": None,
-            "GameTrackerId": None,
-            "TxId": None,
-            "isActive": True,
-            "isBilled": False,
-            "isCancelled": False,
-            "MenuItems": [],
-            "Players": [],
-            "Cost": 0
-        }
-        isNew = True
-    else:
-        ex_ct_doc_ref = trans_coll.document(doc["Id"])
-        ex_ct_doc = ex_ct_doc_ref.get().to_dict()
-
-    plyrFound = False
-    player = {}
-    for plyr in ex_ct_doc["Players"]:
-        if plyr["Id"] == doc["PlayerId"]:
-            plyrFound = True
-            player = plyr
-    
-    if not plyrFound:
-        plyr_doc = get_by_id(doc["PlayerId"])
-        player = {
-            "Id": plyr_doc["Id"],
-            "Name": plyr_doc["Name"],
-            "MenuItems": [],
-            "Cost": 0
-        }
-
-    for mitem_to_add in doc["MenuItems"]:
-        found = False
-        for mitem in player["MenuItems"]:
-            if mitem["Id"] == mitem_to_add["Id"]:
-                mitem["Quan"] += mitem_to_add["Quan"]
-                player["Cost"] += mitem["Cost"] * mitem_to_add["Quan"]
-                ex_ct_doc["Cost"] += mitem["Cost"] * mitem_to_add["Quan"]
-                found = True
-                break
-        if not found:
-            mitem_to_add_doc = get_by_id(mitem_to_add["Id"])
-            mitem_to_add["Cost"] = mitem_to_add_doc["Price"]
-            mitem_to_add["Name"] = mitem_to_add_doc["Name"]
-            player["MenuItems"].append(mitem_to_add)
-            player["Cost"] += mitem_to_add["Cost"] * mitem_to_add["Quan"]
-            ex_ct_doc["Cost"] += mitem_to_add["Cost"] * mitem_to_add["Quan"]
-    
-    if not plyrFound:
-        ex_ct_doc["Players"].append(player)
-
-    if isNew:
-        trans_coll.add(ex_ct_doc, ex_ct_doc["Id"])
-    else:
-        ex_ct_doc_ref.update(ex_ct_doc)
-
-    update_stock(doc)
-    return True, ex_ct_doc
+        self.update_stock(doc)
+        return True, ex_ct_doc
 
 
-def update_stock(doc: dict):
-    for mitem in doc.get("MenuItems",[]):
-        mitem_doc = get_by_id(mitem["Id"])
+    def update_stock(self, doc: dict):
+        for mitem in doc.get("MenuItems",[]):
+            mitem_doc = self.get_by_id(mitem["Id"])
+            remaining = sys.maxsize
+            for ingnt in mitem_doc["Ingredients"]:
+                ingnt_doc = self.get_by_id(ingnt["RawMtrlId"])
+                ingnt_doc["Quantity"] -= mitem["Quan"]*ingnt["Quantity"]
+                self.update(ingnt_doc["Id"], ingnt_doc)
+
+                if ingnt_doc["Quantity"] <= remaining:
+                    remaining = ingnt_doc["Quantity"]
+            mitem_doc["Remaining"] = remaining
+            self.update(mitem_doc["Id"], mitem_doc)
+
+    def update_stock_edit(self, doc: dict):
+        self.update_stock(doc)
+
+        for player in doc["Players"]:
+            self.update_stock(player)
+
+    def get_remaining_stock(self, doc: dict):
         remaining = sys.maxsize
-        for ingnt in mitem_doc["Ingredients"]:
-            ingnt_doc = get_by_id(ingnt["RawMtrlId"])
-            ingnt_doc["Quantity"] -= mitem["Quan"]*ingnt["Quantity"]
-            update(ingnt_doc["Id"], ingnt_doc)
-
-            if ingnt_doc["Quantity"] <= remaining:
+        for ingnt in doc["Ingredients"]:
+            ingnt_doc = self.get_by_id(ingnt["RawMtrlId"])
+            if ingnt_doc["Quantity"] < remaining:
                 remaining = ingnt_doc["Quantity"]
-        mitem_doc["Remaining"] = remaining
-        update(mitem_doc["Id"], mitem_doc)
+        return remaining
 
-def update_stock_edit(doc: dict):
-    update_stock(doc)
+    def update_ct(self, doc_id: str, doc: dict):
+        doc_ref = self.trans_coll.document(doc_id)
+        ex_doc = doc_ref.get().to_dict()
+        print(ex_doc)
 
-    for player in doc["Players"]:
-        update_stock(player)
+        if "MenuItems" in doc and doc["MenuItems"] is not None and doc["MenuItems"] != []:
+            if "MenuItems" in ex_doc and ex_doc["MenuItems"] is not None and ex_doc["MenuItems"] != []:
+                for menu in doc["MenuItems"]:
+                    for i, ex_menu in enumerate(ex_doc["MenuItems"]):
+                        if ex_menu["Id"] == menu["Id"]:
+                            ex_doc["MenuItems"][i]["Quan"] += menu["Quan"]
+                            break
+                        else:
+                            ex_doc["MenuItems"].append(menu)
+        if "MenuItems" not in ex_doc or ex_doc["MenuItems"] is None or ex_doc["MenuItems"] == []:
+            ex_doc["MenuItems"] = doc["MenuItems"]
+        new_players = []
+        for player in doc["Players"]:
+            player_found = False
+            if ex_doc["Players"] is None or ex_doc["Players"] == []:
+                ex_doc["Players"] = []
+                ex_doc["Players"].append(player)
+                continue
+            for ex_player in ex_doc["Players"]:
+                if player["Id"] == ex_player["Id"]:
+                    player_found = True
+                    break
+            if player_found:
+                for menu in player["MenuItems"]:
+                    menu_found = False
+                    for i, ex_menu in enumerate(ex_player["MenuItems"]):
+                        if ex_menu["Id"] == menu["Id"]:
+                            ex_player["MenuItems"][i]["Quan"] += menu["Quan"]
+                            menu_found = True
+                            break
+                    if not menu_found:
+                        ex_player["MenuItems"].append(menu)
+                    
+            else:
+                ex_doc["Players"].append(player)
 
-def get_remaining_stock(doc: dict):
-    remaining = sys.maxsize
-    for ingnt in doc["Ingredients"]:
-        ingnt_doc = get_by_id(ingnt["RawMtrlId"])
-        if ingnt_doc["Quantity"] < remaining:
-            remaining = ingnt_doc["Quantity"]
-    return remaining
+        ex_doc[constants.MDFDTMSTMP] = util.get_current_tmstmp_str()
+        print(ex_doc)
 
-def update_ct(doc_id: str, doc: dict):
-    doc_ref = trans_coll.document(doc_id)
-    ex_doc = doc_ref.get().to_dict()
-    print(ex_doc)
+        # update cost
+        cost = 0
+        players = ex_doc.get("Players", None)
+        if players is not None:
+            for player in players:
+                player["Cost"] = 0
+                menus = player.get("MenuItems", None)
+                if menus is not None:
+                    for menu in menus:
+                        if "Cost" not in player:
+                            player["Cost"] = 0
+                        player["Cost"] += menu["Cost"] * menu["Quan"]
+                        cost += menu["Cost"] * menu["Quan"]
+        ex_doc["Players"] = players
 
-    if "MenuItems" in doc and doc["MenuItems"] is not None and doc["MenuItems"] != []:
-        if "MenuItems" in ex_doc and ex_doc["MenuItems"] is not None and ex_doc["MenuItems"] != []:
-            for menu in doc["MenuItems"]:
-                for i, ex_menu in enumerate(ex_doc["MenuItems"]):
-                    if ex_menu["Id"] == menu["Id"]:
-                        ex_doc["MenuItems"][i]["Quan"] += menu["Quan"]
-                        break
-                    else:
-                        ex_doc["MenuItems"].append(menu)
-    if "MenuItems" not in ex_doc or ex_doc["MenuItems"] is None or ex_doc["MenuItems"] == []:
-        ex_doc["MenuItems"] = doc["MenuItems"]
-    new_players = []
-    for player in doc["Players"]:
-        player_found = False
-        if ex_doc["Players"] is None or ex_doc["Players"] == []:
-            ex_doc["Players"] = []
-            ex_doc["Players"].append(player)
-            continue
-        for ex_player in ex_doc["Players"]:
-            if player["Id"] == ex_player["Id"]:
-                player_found = True
-                break
-        if player_found:
-            for menu in player["MenuItems"]:
-                menu_found = False
-                for i, ex_menu in enumerate(ex_player["MenuItems"]):
-                    if ex_menu["Id"] == menu["Id"]:
-                        ex_player["MenuItems"][i]["Quan"] += menu["Quan"]
-                        menu_found = True
-                        break
-                if not menu_found:
-                    ex_player["MenuItems"].append(menu)
-                
-        else:
-            ex_doc["Players"].append(player)
-
-    ex_doc[constants.MDFDTMSTMP] = util.get_current_tmstmp_str()
-    print(ex_doc)
-
-    # update cost
-    cost = 0
-    players = ex_doc.get("Players", None)
-    if players is not None:
-        for player in players:
-            player["Cost"] = 0
-            menus = player.get("MenuItems", None)
-            if menus is not None:
-                for menu in menus:
-                    if "Cost" not in player:
-                        player["Cost"] = 0
-                    player["Cost"] += menu["Cost"] * menu["Quan"]
-                    cost += menu["Cost"] * menu["Quan"]
-    ex_doc["Players"] = players
-
-    menus = ex_doc["MenuItems"]
-    
-    if menus is not None:
-        for menu in menus:
-            cost += menu["Cost"]* menu["Quan"]
-    ex_doc["Cost"] = cost
-
-    doc_ref.update(ex_doc)
-    update_stock_edit(ex_doc)
-    return True, ex_doc
-
-def get_all_ind_canteen():
-    query = trans_coll.where('Type','==',constants.CANTEEN_TRACKER).where('GameId','==',None)
-    return query.stream()
-
-def get_all_pending_bills(typ: str):
-    query = trans_coll.where('Type','==',typ).where('isPaid','==',False)
-    return query.stream()
-
-def get_all_paid_bills(typ: str):
-    query = trans_coll.where('Type','==',typ).where('isPaid','==',True)
-    return query.stream()
-
-def get_active_game_trackers(typ: str):
-    query = trans_coll.where('Type','==',typ).where('isActive','==',True)
-    return query.stream()
-
-def get_all_games(typ: str):
-    games = get_all(constants.GAME)
-    act_games_lst = get_active_game_trackers(constants.GAME_TRACKER)
-    act_games = {}
-    for act_game in act_games_lst:
-        act_game_dict = act_game.to_dict()
-        act_games[act_game_dict['GameId']] = act_game_dict
-    games_res = {'Games':[]}
-    for game in games:
-        game_dict = game.to_dict()
-        if game_dict['Id'] in act_games:
-            game_dict['active'] = act_games[game_dict['Id']]
-        games_res['Games'].append(game_dict)
-    return games_res
-
-def get_closed_not_billed_games():
-    # add game name
-    games = get_all(constants.GAME)
-    nm_tr_map = {}
-    for game in games:
-        game_dict = game.to_dict()
-        nm_tr_map[game_dict['Id']] = game_dict['Name']
-    
-    query = trans_coll.where('Type','==',constants.GAME_TRACKER).where('isActive','==',False).where('isBilled','==',False).where('isCancelled','==',False)
-    bills = {'ClosedNotBilledGames':[]}
-    for bill in query.stream():
-        bill_doc = bill.to_dict()
-        bill_doc['GameName'] = nm_tr_map[bill_doc['GameId']]
-        if bill_doc['CanteenTrackerId'] is not None:
-            ct_doc = get_by_id_trans(bill_doc['CanteenTrackerId'])
-            bill_doc['CanteenTracker'] = ct_doc
-        else:
-            bill_doc['CanteenTracker'] = None
-        bills['ClosedNotBilledGames'].append(bill_doc)
-
-    return bills
-
-def check_pending_bill(pid: str):
-    query = trans_coll.where('Type','==',constants.BILL_TRACKER).where('PlayerId','==',pid).where('isPaid','==',False)
-    pen_bills = []
-    for bill_doc in query.stream():
-        pen_bills.append(bill_doc.to_dict())
-    return pen_bills
-
-def get_all_plyr_bills(isPaid):
-    # add game name
-    games = get_all(constants.GAME)
-    nm_tr_map = {}
-    for game in games:
-        game_dict = game.to_dict()
-        nm_tr_map[game_dict['Id']] = game_dict['Name']
-
-    query = trans_coll.where('Type','==',constants.BILL_TRACKER).where('isPaid','==',isPaid)
-    plyr_bills = {"BillTrackers": []}
-    for bill_doc_st in query.stream():
-        bill_doc = bill_doc_st.to_dict()
+        menus = ex_doc["MenuItems"]
         
-        plyr_exst = bill_doc.get("PlayerId",None)
-        if plyr_exst is None:
-            continue
+        if menus is not None:
+            for menu in menus:
+                cost += menu["Cost"]* menu["Quan"]
+        ex_doc["Cost"] = cost
+
+        doc_ref.update(ex_doc)
+        self.update_stock_edit(ex_doc)
+        return True, ex_doc
+
+    def get_all_ind_canteen(self):
+        query = self.trans_coll.where('Type','==',constants.CANTEEN_TRACKER).where('GameId','==',None)
+        return query.stream()
+
+    def get_all_pending_bills(self, typ: str):
+        query = self.trans_coll.where('Type','==',typ).where('isPaid','==',False)
+        return query.stream()
+
+    def get_all_paid_bills(self, typ: str):
+        query = self.trans_coll.where('Type','==',typ).where('isPaid','==',True)
+        return query.stream()
+
+    def get_active_game_trackers(self, typ: str):
+        query = self.trans_coll.where('Type','==',typ).where('isActive','==',True)
+        return query.stream()
+
+    def get_all_games(self, typ: str):
+        games = self.get_all(constants.GAME)
+        act_games_lst = self.get_active_game_trackers(constants.GAME_TRACKER)
+        act_games = {}
+        for act_game in act_games_lst:
+            act_game_dict = act_game.to_dict()
+            act_games[act_game_dict['GameId']] = act_game_dict
+        games_res = {'Games':[]}
+        for game in games:
+            game_dict = game.to_dict()
+            if game_dict['Id'] in act_games:
+                game_dict['active'] = act_games[game_dict['Id']]
+            games_res['Games'].append(game_dict)
+        return games_res
+
+    def get_closed_not_billed_games(self):
+        # add game name
+        games = self.get_all(constants.GAME)
+        nm_tr_map = {}
+        for game in games:
+            game_dict = game.to_dict()
+            nm_tr_map[game_dict['Id']] = game_dict['Name']
         
-        if bill_doc.get('GameId',None) is not None:
-            bill_doc['GameName'] = nm_tr_map[bill_doc.get('GameId',None)]
+        query = self.trans_coll.where('Type','==',constants.GAME_TRACKER).where('isActive','==',False).where('isBilled','==',False).where('isCancelled','==',False)
+        bills = {'ClosedNotBilledGames':[]}
+        for bill in query.stream():
+            bill_doc = bill.to_dict()
+            bill_doc['GameName'] = nm_tr_map[bill_doc['GameId']]
+            if bill_doc['CanteenTrackerId'] is not None:
+                ct_doc = self.get_by_id_trans(bill_doc['CanteenTrackerId'])
+                bill_doc['CanteenTracker'] = ct_doc
+            else:
+                bill_doc['CanteenTracker'] = None
+            bills['ClosedNotBilledGames'].append(bill_doc)
 
-        # send only phone and credit
-        plyr_doc = get_by_id(bill_doc["PlayerId"])
-        # plyr = {
-        #     "Name": plyr_doc.get("Name",None),
-        #     "Phone": plyr_doc.get("Phone",None),
-        #     "Credit": plyr_doc.get("Credit",None),
-        #     "isPlaying": plyr_doc.get("isPlaying",None)
-        # }
-        bill_doc['Player'] = plyr_doc
+        return bills
 
-        if bill_doc['CanteenTrackerId'] is not None:
-            ct_doc = get_by_id_trans(bill_doc['CanteenTrackerId'])
-            bill_doc['CanteenTracker'] = ct_doc
-        else:
-            bill_doc['CanteenTracker'] = None
+    def check_pending_bill(self, pid: str):
+        query = self.trans_coll.where('Type','==',constants.BILL_TRACKER).where('PlayerId','==',pid).where('isPaid','==',False)
+        pen_bills = []
+        for bill_doc in query.stream():
+            pen_bills.append(bill_doc.to_dict())
+        return pen_bills
+
+    def get_all_plyr_bills(self, isPaid):
+        # add game name
+        games = self.get_all(constants.GAME)
+        nm_tr_map = {}
+        for game in games:
+            game_dict = game.to_dict()
+            nm_tr_map[game_dict['Id']] = game_dict['Name']
+
+        query = self.trans_coll.where('Type','==',constants.BILL_TRACKER).where('isPaid','==',isPaid)
+        plyr_bills = {"BillTrackers": []}
+        for bill_doc_st in query.stream():
+            bill_doc = bill_doc_st.to_dict()
+            
+            plyr_exst = bill_doc.get("PlayerId",None)
+            if plyr_exst is None:
+                continue
+            
+            if bill_doc.get('GameId',None) is not None:
+                bill_doc['GameName'] = nm_tr_map[bill_doc.get('GameId',None)]
+
+            # send only phone and credit
+            plyr_doc = self.get_by_id(bill_doc["PlayerId"])
+            # plyr = {
+            #     "Name": plyr_doc.get("Name",None),
+            #     "Phone": plyr_doc.get("Phone",None),
+            #     "Credit": plyr_doc.get("Credit",None),
+            #     "isPlaying": plyr_doc.get("isPlaying",None)
+            # }
+            bill_doc['Player'] = plyr_doc
+
+            if bill_doc['CanteenTrackerId'] is not None:
+                ct_doc = self.get_by_id_trans(bill_doc['CanteenTrackerId'])
+                bill_doc['CanteenTracker'] = ct_doc
+            else:
+                bill_doc['CanteenTracker'] = None
+            
+            if bill_doc['GameTrackerId'] is not None:
+                gt_doc = self.get_by_id_trans(bill_doc['GameTrackerId'])
+                bill_doc['GameTracker'] = gt_doc
+            else:
+                bill_doc['GameTracker'] = None
+            plyr_bills["BillTrackers"].append(bill_doc)
+        return plyr_bills
         
-        if bill_doc['GameTrackerId'] is not None:
-            gt_doc = get_by_id_trans(bill_doc['GameTrackerId'])
-            bill_doc['GameTracker'] = gt_doc
-        else:
-            bill_doc['GameTracker'] = None
-        plyr_bills["BillTrackers"].append(bill_doc)
-    return plyr_bills
-    
-def trash(menu_itms: dict):
-    try:
-        update_stock(menu_itms)
-        trash_ref = target_coll.document("Trash")
-        if not trash_ref.get().exists:
-            tmstmp = util.get_current_tmstmp_str()
-            trash = {
-                "Id": "Trash",
-                "Type": "Trash",
-                tmstmp: menu_itms
-            }
-            target_coll.add(trash, "Trash")
-        else:
-            trash = trash_ref.get().to_dict()
-            tmstmp = util.get_current_tmstmp_str()
-            trash[tmstmp]= menu_itms
-            update_target("Trash", trash)
-    except Exception as e:
-        print(e)
-        return False
-    return True
+    def trash(self, menu_itms: dict):
+        try:
+            self.update_stock(menu_itms)
+            trash_ref = self.target_coll.document("Trash")
+            if not trash_ref.get().exists:
+                tmstmp = util.get_current_tmstmp_str()
+                trash = {
+                    "Id": "Trash",
+                    "Type": "Trash",
+                    tmstmp: menu_itms
+                }
+                self.target_coll.add(trash, "Trash")
+            else:
+                trash = trash_ref.get().to_dict()
+                tmstmp = util.get_current_tmstmp_str()
+                trash[tmstmp]= menu_itms
+                self.update_target("Trash", trash)
+        except Exception as e:
+            print(e)
+            return False
+        return True
 
-def get_trash():
-    return target_coll.document("Trash").get().to_dict()
+    def get_trash(self):
+        return self.target_coll.document("Trash").get().to_dict()
 
-def add_branch(branch_pld: dict):
-    doc_id = constants.BRANCH+'::'+str(get_next_id(constants.BRANCH))
-    branch_pld["Id"] = doc_id
-    branch_pld[constants.MDFDTMSTMP] = util.get_current_tmstmp_str()
-    branch_pld[constants.CREATEDTMSTMP] = util.get_current_tmstmp_str()
+    def add_branch(self, branch_pld: dict):
+        doc_id = constants.BRANCH+'::'+str(self.get_next_id(constants.BRANCH))
+        branch_pld["Id"] = doc_id
+        branch_pld[constants.MDFDTMSTMP] = util.get_current_tmstmp_str()
+        branch_pld[constants.CREATEDTMSTMP] = util.get_current_tmstmp_str()
 
-    target_coll.add(branch_pld, doc_id)
+        self.target_coll.add(branch_pld, doc_id)
 
-    create_collection(branch_pld["Name"]+"-masterdata-source")
-    create_collection(branch_pld["Name"]+"-masterdata-target")
-    create_collection(branch_pld["Name"]+"-transaction-data")
+        self.create_collection(branch_pld["Name"]+"-masterdata-source")
+        self.create_collection(branch_pld["Name"]+"-masterdata-target")
+        self.create_collection(branch_pld["Name"]+"-transaction-data")
 
-    return True
+        return True
 
 
-# def get_next_id_transactional():
-#     with store.transaction() as transaction:
-#         snapshot = counter_ref.get(transaction=transaction)
-#         if snapshot.exists:
-#             current_id = snapshot.get('current_id')
-#         else:
-#             current_id = 0
-#         next_id = current_id + 1
+    # def get_next_id_transactional():
+    #     with store.transaction() as transaction:
+    #         snapshot = counter_ref.get(transaction=transaction)
+    #         if snapshot.exists:
+    #             current_id = snapshot.get('current_id')
+    #         else:
+    #             current_id = 0
+    #         next_id = current_id + 1
 
-#         transaction.update(counter_ref, {'current_id': next_id})
-#     return next_id
+    #         transaction.update(counter_ref, {'current_id': next_id})
+    #     return next_id

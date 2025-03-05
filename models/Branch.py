@@ -9,3 +9,4 @@ class Branch(BaseModel):
     Id: str = None
     Type: str = constants.BRANCH
     isActive: bool = True
+    Code: str

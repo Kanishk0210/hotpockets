@@ -3,14 +3,14 @@ import string
 import base64
 # import ngrok
 
-from fastapi import FastAPI, APIRouter, Body, Depends
+from fastapi import FastAPI, APIRouter, Body, Depends, Request
 
 from starlette.middleware.cors import CORSMiddleware
 from starlette.responses import JSONResponse
 
 import uvicorn
 
-from database import firebase_conn as fs_db
+from database.firebase_conn import FirebaseConn
 from services import game, daily_collect
 from models.Player import Player
 from models.Game import Game
@@ -26,7 +26,7 @@ from models.Branch import Branch
 from util import util, constants
 # from auth import auth_bearer, auth_handler
 from auth.auth_bearer import JWTBearer
-from auth.auth_handler import signJWT
+from auth.auth_handler import signJWT, decodeJWT
 
 app = FastAPI()
 
@@ -44,13 +44,25 @@ app.add_middleware(
     allow_headers = ["*"]
 )
 
+@app.middleware("pre_setup")
+def pre_setup(request: Request, call_next):
+    token = request.headers.get("authorization")
+    dec_token = decodeJWT(token)
+    global fs_db 
+    fs_db = FirebaseConn(dec_token.get("branch"))
+
+    return call_next(request)
+
 def check_user(data: UserLoginSchema):
     users = fs_db.get_all(constants.EMPLOYEE)
+    br_cd = ""
     for usr in users:
         user = usr.to_dict()
         user_dec_pass = util.decode_pass(user["Password"])
         if user["Email"] == data.email and user_dec_pass == data.password:
-            return True
+            br_cd = user["Branch"]
+            perms = user["Permission"]
+            return True, br_cd, perms
     return False
 
 @app.get("/", dependencies= [Depends(JWTBearer())] ,tags=["root"])
@@ -59,8 +71,9 @@ async def root():
 
 @app.post("/user/login", tags=["user"])
 def user_login(user: UserLoginSchema = Body(...)):
-    if check_user(user):
-        return signJWT(user.email)
+    is_user, br_cd, perms = check_user(user)
+    if is_user:
+        return signJWT(user.email, br_cd, perms)
     return {
         "error": "Wrong login details!"
     }
