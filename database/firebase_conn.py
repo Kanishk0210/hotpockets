@@ -7,50 +7,49 @@ from google.cloud.firestore_v1.base_query import FieldFilter
 from util import util, constants
 import sys
 
+cred = credentials.Certificate('resources/hotpockets-test-firebase-adminsdk-4gr44-d3d84f282d.json')
+
+#cred = credentials.Certificate('resources/firebasse-adminsdk-prod.json')
+
+firebase_app = firebase_admin.initialize_app(cred)
+
 class FirebaseConn():
+    def __init__(self, br_cd: str):
+        if br_cd == "":
+            sep = ""
+        else:
+            sep = "-"
+        self.target_coll_str = br_cd+sep+'masterdata-target'
+        self.source_coll_str = br_cd+sep+'masterdata-source'
+        self.trans_coll_str = br_cd+sep+'transaction-data'
+    
+        self.store = firestore.client()
 
-    target_coll_str = 'masterdata-target'
-    source_coll_str = 'masterdata-source'
-    trans_coll_str = 'transaction-data'
+        self.player_counter_id = 'player_counter'
+        self.game_counter_id = 'game_counter'
+        self.emp_counter_id = 'emp_counter'
+        self.inv_counter_id = 'inv_counter'
+        self.rawMtrl_counter_id = 'rawMtrl_counter'
+        self.menu_item_counter_id = 'menu_item_counter'
+        self.game_tracker_counter_id = 'game_tracker_counter'
+        self.bill_tracker_counter_id = 'bill_tracker_counter'
+        self.canteen_tracker_counter_id = 'canteen_tracker_counter'
+        self.branch_counter_id = 'branch_counter'
 
-    def __init__(self, br_cd):
-        self.target_coll_str = br_cd+'masterdata-target'
-        self.source_coll_str = br_cd+'masterdata-source'
-        self.trans_coll_str = br_cd+'transaction-data'
+        self.target_coll = self.store.collection(self.target_coll_str)
+        self.source_coll = self.store.collection(self.source_coll_str)
+        self.trans_coll = self.store.collection(self.trans_coll_str)
 
-    cred = credentials.Certificate('resources/hotpockets-test-firebase-adminsdk-4gr44-d3d84f282d.json')
-
-    #cred = credentials.Certificate('resources/firebasse-adminsdk-prod.json')
-
-    firebase_app = firebase_admin.initialize_app(cred)
-
-    store = firestore.client()
-
-    player_counter_id = 'player_counter'
-    game_counter_id = 'game_counter'
-    emp_counter_id = 'emp_counter'
-    inv_counter_id = 'inv_counter'
-    rawMtrl_counter_id = 'rawMtrl_counter'
-    menu_item_counter_id = 'menu_item_counter'
-    game_tracker_counter_id = 'game_tracker_counter'
-    bill_tracker_counter_id = 'bill_tracker_counter'
-    canteen_tracker_counter_id = 'canteen_tracker_counter'
-    branch_counter_id = 'branch_counter'
-
-    target_coll = store.collection(target_coll_str)
-    source_coll = store.collection(source_coll_str)
-    trans_coll = store.collection(trans_coll_str)
-
-    player_counter_ref = source_coll.document(player_counter_id)
-    game_counter_ref = source_coll.document(game_counter_id)
-    emp_counter_ref = source_coll.document(emp_counter_id)
-    inv_counter_ref = source_coll.document(inv_counter_id)
-    rawMtrl_counter_ref = source_coll.document(rawMtrl_counter_id)
-    menu_item_counter_ref = source_coll.document(menu_item_counter_id)
-    game_tracker_counter_ref = source_coll.document(game_tracker_counter_id)
-    bill_tracker_counter_ref = source_coll.document(bill_tracker_counter_id)
-    canteen_tracker_counter_ref = source_coll.document(canteen_tracker_counter_id)
-    branch_counter_ref = source_coll.document(branch_counter_id)
+        self.player_counter_ref = self.source_coll.document(self.player_counter_id)
+        self.game_counter_ref = self.source_coll.document(self.game_counter_id)
+        self.emp_counter_ref = self.source_coll.document(self.emp_counter_id)
+        self.inv_counter_ref = self.source_coll.document(self.inv_counter_id)
+        self.rawMtrl_counter_ref = self.source_coll.document(self.rawMtrl_counter_id)
+        self.menu_item_counter_ref = self.source_coll.document(self.menu_item_counter_id)
+        self.game_tracker_counter_ref = self.source_coll.document(self.game_tracker_counter_id)
+        self.bill_tracker_counter_ref = self.source_coll.document(self.bill_tracker_counter_id)
+        self.canteen_tracker_counter_ref = self.source_coll.document(self.canteen_tracker_counter_id)
+        self.branch_counter_ref = self.source_coll.document(self.branch_counter_id)
 
     # admin
 
@@ -652,9 +651,9 @@ class FirebaseConn():
 
         self.target_coll.add(branch_pld, doc_id)
 
-        self.create_collection(branch_pld["Name"]+"-masterdata-source")
-        self.create_collection(branch_pld["Name"]+"-masterdata-target")
-        self.create_collection(branch_pld["Name"]+"-transaction-data")
+        self.create_collection(branch_pld["Code"]+"-masterdata-source")
+        self.create_collection(branch_pld["Code"]+"-masterdata-target")
+        self.create_collection(branch_pld["Code"]+"-transaction-data")
 
         return True
 

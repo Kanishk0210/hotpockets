@@ -3,10 +3,11 @@ import string
 import base64
 # import ngrok
 
-from fastapi import FastAPI, APIRouter, Body, Depends, Request
+from fastapi import FastAPI, APIRouter, Body, Depends
 
 from starlette.middleware.cors import CORSMiddleware
 from starlette.responses import JSONResponse
+from starlette.requests import Request
 
 import uvicorn
 
@@ -44,12 +45,16 @@ app.add_middleware(
     allow_headers = ["*"]
 )
 
-@app.middleware("pre_setup")
+@app.middleware("http")
 def pre_setup(request: Request, call_next):
-    token = request.headers.get("authorization")
-    dec_token = decodeJWT(token)
-    global fs_db 
-    fs_db = FirebaseConn(dec_token.get("branch"))
+    print(request.headers)
+    b,token = request.headers.get("authorization","").split(" ")
+    dec_token = decodeJWT(token) 
+    br = dec_token.get("branch","")
+    global fs_db
+    fs_db = FirebaseConn(dec_token.get("branch",""))
+
+    print(fs_db.target_coll_str)
 
     return call_next(request)
 
@@ -63,7 +68,7 @@ def check_user(data: UserLoginSchema):
             br_cd = user["Branch"]
             perms = user["Permission"]
             return True, br_cd, perms
-    return False
+    return False, None, None
 
 @app.get("/", dependencies= [Depends(JWTBearer())] ,tags=["root"])
 async def root():
