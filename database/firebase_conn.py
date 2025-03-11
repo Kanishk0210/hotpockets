@@ -13,7 +13,7 @@ cred = credentials.Certificate('resources/hotpockets-test-firebase-adminsdk-4gr4
 
 firebase_app = firebase_admin.initialize_app(cred)
 
-class FirebaseConn():
+class FirebaseConn:
     def __init__(self, br_cd: str):
         if br_cd == "":
             sep = ""

@@ -5,6 +5,7 @@ import base64
 
 from fastapi import FastAPI, APIRouter, Body, Depends
 
+from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.cors import CORSMiddleware
 from starlette.responses import JSONResponse
 from starlette.requests import Request
@@ -12,7 +13,8 @@ from starlette.requests import Request
 import uvicorn
 
 from database.firebase_conn import FirebaseConn
-from services import game, daily_collect
+from services.game import GameService
+from services.daily_collect import DailyCollectService
 from models.Player import Player
 from models.Game import Game
 from models.Employee import Employee
@@ -31,13 +33,35 @@ from auth.auth_handler import signJWT, decodeJWT
 
 app = FastAPI()
 
+# global fs_db
+# fs_db = FirebaseConn("")
+
 # authb = auth_bearer()
+
+class BranchMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        print(request.headers)
+        global fs_db, game, daily_collect
+        if request.url.path == "/user/login":
+            fs_db = FirebaseConn("")
+            return await call_next(request)
+        b,token = request.headers.get("authorization","").split(" ")
+        dec_token = decodeJWT(token) 
+        br = dec_token.get("branch","")
+        fs_db = FirebaseConn(dec_token.get("branch",""))
+        game = GameService(fs_db)
+        daily_collect = DailyCollectService(fs_db)
+
+        print(fs_db.target_coll_str)
+
+        return await call_next(request)
 
 origins = [
     "http://localhost:3000",
     "https://hot-pocket-47985.web.app"
 ]
 
+app.add_middleware(BranchMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins = origins,
@@ -45,18 +69,24 @@ app.add_middleware(
     allow_headers = ["*"]
 )
 
-@app.middleware("http")
-def pre_setup(request: Request, call_next):
-    print(request.headers)
-    b,token = request.headers.get("authorization","").split(" ")
-    dec_token = decodeJWT(token) 
-    br = dec_token.get("branch","")
-    global fs_db
-    fs_db = FirebaseConn(dec_token.get("branch",""))
 
-    print(fs_db.target_coll_str)
 
-    return call_next(request)
+
+# @app.middleware("http")
+# def pre_setup(request: Request, call_next):
+#     print(request.headers)
+#     global fs_db
+#     if request.url.path == "/user/login":
+#         fs_db = FirebaseConn("")
+#         return call_next(request)
+#     b,token = request.headers.get("authorization","").split(" ")
+#     dec_token = decodeJWT(token) 
+#     br = dec_token.get("branch","")
+#     fs_db = FirebaseConn(dec_token.get("branch",""))
+
+    # print(fs_db.target_coll_str)
+
+    # return call_next(request)
 
 def check_user(data: UserLoginSchema):
     users = fs_db.get_all(constants.EMPLOYEE)

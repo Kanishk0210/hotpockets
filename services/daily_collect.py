@@ -1,27 +1,31 @@
-from database import firebase_conn as fs_db
+from database.firebase_conn import FirebaseConn
 from util import util, constants
 
-def update_safe(dc: dict):
-    safe_id = constants.SAFE_ID
-    safe = fs_db.get_safe()
+class DailyCollectService:
+    def __init__(self, fs_db: FirebaseConn):
+        self.fs_db = fs_db
 
-    safe[constants.MDFDTMSTMP] = dc.get("CurrentCollectTmstmp")
-    safe["CurrentCollectTmstmp"] = dc.get("CurrentCollectTmstmp")
-    safe["LastCollectTmstmp"] = dc.get("LastCollectTmstmp")
-    safe["AvailableCash"] = safe.get("AvailableCash", 0) - dc["Collection"]
-    safe["LastDailyCollectId"] = dc.get("Id")
-    safe["MdfdById"] = "Collector"
+    def update_safe(self, dc: dict):
+        safe_id = constants.SAFE_ID
+        safe = self.fs_db.get_safe()
 
-    fs_db.update_safe(safe_id, safe)
-    return True
+        safe[constants.MDFDTMSTMP] = dc.get("CurrentCollectTmstmp")
+        safe["CurrentCollectTmstmp"] = dc.get("CurrentCollectTmstmp")
+        safe["LastCollectTmstmp"] = dc.get("LastCollectTmstmp")
+        safe["AvailableCash"] = safe.get("AvailableCash", 0) - dc["Collection"]
+        safe["LastDailyCollectId"] = dc.get("Id")
+        safe["MdfdById"] = "Collector"
 
-def save_cash(cash):
-    safe_id = constants.SAFE_ID
-    safe = fs_db.get_safe()
+        self.fs_db.update_safe(safe_id, safe)
+        return True
 
-    safe[constants.MDFDTMSTMP] = util.get_current_tmstmp_str()
-    safe["MdfdById"] = "Service"
-    safe["AvailableCash"] = safe["AvailableCash"] + cash
+    def save_cash(self, cash):
+        safe_id = constants.SAFE_ID
+        safe = self.fs_db.get_safe()
 
-    fs_db.update_safe(safe_id, safe)
-    return True
+        safe[constants.MDFDTMSTMP] = util.get_current_tmstmp_str()
+        safe["MdfdById"] = "Service"
+        safe["AvailableCash"] = safe["AvailableCash"] + cash
+
+        self.fs_db.update_safe(safe_id, safe)
+        return True
