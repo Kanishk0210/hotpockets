@@ -26,6 +26,7 @@ from models.GameTracker import GameTracker, GameTrackerEndRequest
 from models.CanteenTracker import CanteenTracker
 from models.DailyCollect import DailyCollect
 from models.Branch import Branch
+from models.Audit import Audit
 from util import util, constants
 # from auth import auth_bearer, auth_handler
 from auth.auth_bearer import JWTBearer
@@ -41,18 +42,22 @@ app = FastAPI()
 class BranchMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         print(request.headers)
-        global fs_db, game, daily_collect
+        global fs_db, game, daily_collect, audit
         if request.url.path == "/user/login":
             fs_db = FirebaseConn("")
             return await call_next(request)
         b,token = request.headers.get("authorization","").split(" ")
         dec_token = decodeJWT(token) 
         br = dec_token.get("branch","")
-        fs_db = FirebaseConn(dec_token.get("branch",""))
+        empId = dec_token.get("user_id","")
+        empName = dec_token.get("user_name")
+        fs_db = FirebaseConn(br)
         game = GameService(fs_db)
         daily_collect = DailyCollectService(fs_db)
 
         print(fs_db.target_coll_str)
+
+        audit = Audit(empId, empName, br)
 
         return await call_next(request)
 
@@ -98,7 +103,7 @@ def check_user(data: UserLoginSchema):
         if user["Email"] == data.email and user_dec_pass == data.password:
             br_cd = user["Branch"]
             perms = user["Permission"]
-            return True, br_cd, perms
+            return True, br_cd, perms, user["Name"]
 
     admins = fs_db.get_all_admins()
     for admin in admins:
@@ -108,8 +113,8 @@ def check_user(data: UserLoginSchema):
         if admin["Email"] == data.email and user_dec_pass == data.password:
             br_cd = admin["Branch"]
             perms = admin["Permission"]
-            return True, br_cd, perms
-    return False, None, None
+            return True, br_cd, perms, admin["Name"]
+    return False, None, None, None
 
 @app.get("/", dependencies= [Depends(JWTBearer())] ,tags=["root"])
 async def root():
@@ -117,12 +122,12 @@ async def root():
 
 @app.post("/user/login", tags=["user"])
 def user_login(user: UserLoginSchema = Body(...)):
-    is_user, br_cd, perms = check_user(user)
+    is_user, br_cd, perms, usr_nm = check_user(user)
     if is_user:
-        return signJWT(user.email, br_cd, perms)
-    return {
-        "error": "Wrong login details!"
-    }
+        fs_db.audit_log(audit, None, constants.AC_LOGIN, None, None)
+        return signJWT(user.email, usr_nm, br_cd, perms)
+    return JSONResponse(content="error: Wrong login details!", status_code=401)
+    
 
 @app.delete("/delete/{doc_id}", dependencies=[Depends(JWTBearer())])
 def delete_target(doc_id: str):

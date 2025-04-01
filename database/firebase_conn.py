@@ -5,7 +5,12 @@ from firebase_admin import credentials, db, firestore
 from google.cloud.firestore_v1.base_query import FieldFilter
 
 from util import util, constants
+from models.Audit import Audit
 import sys
+
+from datetime import datetime
+from collections imort defaultdict
+import uuid
 
 cred = credentials.Certificate('resources/hotpockets-test-firebase-adminsdk-4gr44-d3d84f282d.json')
 
@@ -674,6 +679,16 @@ class FirebaseConn:
             .where('isPaid', '==', True)
         )
 
+        query = self.trans_coll.where(
+                filter=FieldFilter('Type', '==', constants.BILL_TRACKER)
+            ).where(
+                filter=FieldFilter('isPaid', '==', True)
+            ).where(
+                filter=FieldFilter('MdfdTmStmp', '>=', start_timestamp)
+            ).where(
+                filter=FieldFilter('MdfdTmStmp', '<=', end_timestamp)
+            )
+
         revenue = {
             "data":[],
             "revenue_summary" : {
@@ -691,42 +706,47 @@ class FirebaseConn:
 
         date_revenue_map = defaultdict(float)
 
-        start_ts = start_timestamp.timestamp()
-        end_ts = end_timestamp.timestamp()
-
         for bill_doc_st in query.stream():
             bill_doc = bill_doc_st.to_dict()
 
             # Ensure createdTimestamp is a valid number before comparison
-            created_ts = datetime.strptime(bill_doc.get("CreatedTmStmp"), "%Y-%m-%d %H:%M:%S").timestamp()
+            created_ts = datetime.strptime(bill_doc.get("MdfdTmStmp"), "%Y-%m-%d %H:%M:%S").timestamp()
             created_date = datetime.fromtimestamp(created_ts).strftime("%Y-%m-%d")
             discount = bill_doc.get("Discount",0)
 
             total_amount = bill_doc.get("TotalCost", 0) - discount
             date_revenue_map[created_date] += total_amount
 
-            if created_ts is None:
-                continue  # Skip documents without a valid createdTimestamp
+            revenue["data"].append({
+                "date":"",
+                "total":""
+            })
 
-            if start_ts <= created_ts <= end_ts:
-                revenue["data"].append({
-                    "date":"",
-                    "total":""
-                })
-
-                revenue["revenue_summary"]["GameRevenue"] += bill_doc.get("GameCost", 0)
-                revenue["revenue_summary"]["CanteenRevenue"] += bill_doc.get("CanteenCost", 0)
-                revenue["revenue_summary"]["TotalRevenue"] += bill_doc.get("TotalCost", 0)
-                revenue["revenue_summary"]["Total"] += ( bill_doc.get("TotalCost", 0) - discount )
-                revenue["revenue_summary"]["Discount"] += bill_doc.get("Discount", 0)
-                revenue["revenue_summary"]["BillCount"] += 1
-                revenue["revenue_summary"]["Cash"] += sum(bill_doc.get("Mode")["Cash"])
-                revenue["revenue_summary"]["Credit"] += sum(bill_doc.get("Mode")["Credit"])
-                revenue["revenue_summary"]["Online"] += sum(bill_doc.get("Mode")["Online"])
+            revenue["revenue_summary"]["GameRevenue"] += bill_doc.get("GameCost", 0)
+            revenue["revenue_summary"]["CanteenRevenue"] += bill_doc.get("CanteenCost", 0)
+            revenue["revenue_summary"]["TotalRevenue"] += bill_doc.get("TotalCost", 0)
+            revenue["revenue_summary"]["Total"] += ( bill_doc.get("TotalCost", 0) - discount )
+            revenue["revenue_summary"]["Discount"] += bill_doc.get("Discount", 0)
+            revenue["revenue_summary"]["BillCount"] += 1
+            revenue["revenue_summary"]["Cash"] += sum(bill_doc.get("Mode")["Cash"])
+            revenue["revenue_summary"]["Credit"] += sum(bill_doc.get("Mode")["Credit"])
+            revenue["revenue_summary"]["Online"] += sum(bill_doc.get("Mode")["Online"])
 
         revenue["data"] = [{"date": date, "amount": amount} for date, amount in date_revenue_map.items()]
 
         return revenue
+
+    def audit_log(self, audit: Audit, doc_id, action, pr_value, nw_value):
+        audit.Id = constants.AUDIT + "::" + uuid.uuid4()
+        audit.CreatedTmStmp = util.get_current_tmstmp_str()
+        audit.DocId = doc_id
+        audit.Action = action
+        audit.PreviousValue = pr_value
+        audit.NewValue = nw_value
+
+        self.store.collection(self.trans_coll_str).add(audit.dict(), audit.Id)
+
+
 
 
     # def get_next_id_transactional():

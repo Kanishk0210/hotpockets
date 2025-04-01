@@ -16,3 +16,5 @@ CANTEEN_TRACKER = 'CanteenTracker'
 BILL_TRACKER = 'BillTracker'
 DAILY_COLLECT = "DailyCollect"
 SAFE_ID = "Safe"
+AUDIT = "Audit"
+AC_LOGIN = "Login"
