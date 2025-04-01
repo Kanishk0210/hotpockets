@@ -1,4 +1,6 @@
 import firebase_admin
+import logging
+from datetime import datetime
 
 from firebase_admin import credentials, db, firestore
 
@@ -12,6 +14,8 @@ cred = credentials.Certificate('resources/hotpockets-test-firebase-adminsdk-4gr4
 #cred = credentials.Certificate('resources/firebasse-adminsdk-prod.json')
 
 firebase_app = firebase_admin.initialize_app(cred)
+
+logger = logging.getLogger(__name__)
 
 class FirebaseConn:
     def __init__(self, br_cd: str):
@@ -657,6 +661,75 @@ class FirebaseConn:
 
         return True
 
+    def get_revenue_data(self, start_time: str, end_time: str):
+        """
+        Fetch all paid bills within the given date range
+        """
+        try:
+            logger.info(f"Querying bills from {start_time} to {end_time}")
+            
+            query = self.trans_coll.where(
+                filter=FieldFilter('Type', '==', constants.BILL_TRACKER)
+            ).where(
+                filter=FieldFilter('isPaid', '==', True)
+            ).where(
+                filter=FieldFilter('PaymentTime', '>=', start_time)
+            ).where(
+                filter=FieldFilter('PaymentTime', '<=', end_time)
+            )
+            
+            results = query.stream()
+            count = sum(1 for _ in results)
+            logger.info(f"Found {count} bills matching criteria")
+            
+            # Reset the stream for actual use
+            results = query.stream()
+            return results
+
+        except Exception as e:
+            logger.error(f"Database query failed: {str(e)}", exc_info=True)
+            logger.error(f"Query parameters - Start: {start_time}, End: {end_time}")
+            raise e
+
+    def add_audit(self, audit_data: dict):
+        """
+        Add audit entry to branch-specific audit collection
+        """
+        try:
+            # Use branch-specific collection
+            audit_collection = f"{self.target_coll_str}-audit"
+            audit_ref = self.store.collection(audit_collection)
+            
+            # Add timestamp
+            audit_data[constants.MDFDTMSTMP] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            
+            # Add document
+            audit_ref.add(audit_data)
+            logger.info(f"Added audit entry for {audit_data.get('Action')} on {audit_data.get('RawMaterialId')}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to add audit entry: {str(e)}")
+            return False
+
+    def get_raw_material_audit(self, raw_material_id: str = None, start_date: str = None, end_date: str = None):
+        """
+        Get audit logs for raw materials with optional filters
+        """
+        try:
+            audit_collection = f"{self.target_coll_str}-audit"
+            query = self.store.collection(audit_collection).where('Type', '==', constants.RAWMTRL_AUDIT)
+
+            if raw_material_id:
+                query = query.where('RawMaterialId', '==', raw_material_id)
+            if start_date:
+                query = query.where('CreatedAt', '>=', start_date)
+            if end_date:
+                query = query.where('CreatedAt', '<=', end_date)
+
+            return query.stream()
+        except Exception as e:
+            logger.error(f"Failed to get audit logs: {str(e)}")
+            raise e
 
     # def get_next_id_transactional():
     #     with store.transaction() as transaction:

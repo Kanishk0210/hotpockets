@@ -4,7 +4,8 @@ from util import constants
 class Player(BaseModel):
     Id: str = None
     Name: str
-    Gender: str = Field(regex='^(M|F|O)$')
+    Gender: str 
+    #= Field(regex='^(M|F|O)$')
     Phone: str = Field(min_length=10)
     Type: str = Field(default=constants.PLAYER)
     AadharCard: str = None

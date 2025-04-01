@@ -2,8 +2,10 @@ import random
 import string
 import base64
 # import ngrok
+import logging
+from typing import Optional
 
-from fastapi import FastAPI, APIRouter, Body, Depends
+from fastapi import FastAPI, APIRouter, Body, Depends, Query
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.cors import CORSMiddleware
@@ -29,7 +31,9 @@ from models.Branch import Branch
 from util import util, constants
 # from auth import auth_bearer, auth_handler
 from auth.auth_bearer import JWTBearer
-from auth.auth_handler import signJWT, decodeJWT
+from auth.auth_handler import signJWT, decodeJWT, signJWT_branch
+from datetime import datetime, timedelta
+from models.Audit import RawMaterialAudit
 
 app = FastAPI()
 
@@ -38,23 +42,51 @@ app = FastAPI()
 
 # authb = auth_bearer()
 
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
 class BranchMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         print(request.headers)
         global fs_db, game, daily_collect
+        
+        # Skip auth check for login endpoint
         if request.url.path == "/user/login":
             fs_db = FirebaseConn("")
             return await call_next(request)
-        b,token = request.headers.get("authorization","").split(" ")
-        dec_token = decodeJWT(token) 
-        br = dec_token.get("branch","")
-        fs_db = FirebaseConn(dec_token.get("branch",""))
-        game = GameService(fs_db)
-        daily_collect = DailyCollectService(fs_db)
+            
+        # Handle requests without authorization header
+        auth_header = request.headers.get("authorization", "")
+        if not auth_header:
+            return JSONResponse(
+                content={"error": "Authorization header is required"},
+                status_code=401
+            )
+            
+        try:
+            b, token = auth_header.split(" ")
+            dec_token = decodeJWT(token) 
+            br = dec_token.get("branch","")
+            fs_db = FirebaseConn(dec_token.get("branch",""))
+            game = GameService(fs_db)
+            daily_collect = DailyCollectService(fs_db)
 
-        print(fs_db.target_coll_str)
-
-        return await call_next(request)
+            print(fs_db.target_coll_str)
+            return await call_next(request)
+        except ValueError:
+            return JSONResponse(
+                content={"error": "Invalid authorization header format"},
+                status_code=401
+            )
+        except Exception as e:
+            return JSONResponse(
+                content={"error": f"Authentication error: {str(e)}"},
+                status_code=401
+            )
 
 origins = [
     "http://localhost:3000",
@@ -112,6 +144,14 @@ def user_login(user: UserLoginSchema = Body(...)):
     return {
         "error": "Wrong login details!"
     }
+
+@app.post("/admin/branch", dependencies= [Depends(JWTBearer())])
+def adm_sel_branch(req: Request):
+    branch = req.headers.get("branch")
+    b,token = req.headers.get("authorization","").split(" ")
+
+    return signJWT_branch(token, branch)
+
 
 @app.delete("/delete/{doc_id}", dependencies=[Depends(JWTBearer())])
 def delete_target(doc_id: str):
@@ -202,25 +242,92 @@ def get_invs():
     return JSONResponse(content=inv_res, status_code=200)
 
 @app.post("/rawMtrl", dependencies=[Depends(JWTBearer())])
-def add_raw(rawMtrl: RawMtrl):
-    #chars = string.ascii_letters + string.digits
-    # doc_id = 'Player::'+ player.name[:3].upper()+'_'+player.phone[-4:]+'_'+''.join(random.choices(chars, k=4)) # Player::ASH_6891_oWtp
-    rm_dict = rawMtrl.dict()
-    if rm_dict.get("CostPerBox",None) is not None:
-        rm_dict["CostPerItem"] = rm_dict["CostPerBox"]//rm_dict["QuantityPerBox"]
-        rm_dict["Quantity"] = rm_dict["QuantityBox"]*rm_dict["QuantityPerBox"]
-    isAdded, doc = fs_db.add(constants.RAWMTRL, rm_dict)
+def add_raw(rawMtrl: RawMtrl, request: Request):
+    try:
+        # Get employee info from JWT token
+        token = request.headers.get("authorization").split(" ")[1]
+        dec_token = decodeJWT(token)
+        employee_id = dec_token.get("user_id")
+        branch = dec_token.get("branch")
 
-    if not isAdded:
-        JSONResponse(content='Failed to Add Raw Material.', status_code=500)
-    return JSONResponse(content=doc, status_code=201)
+        logger.info(f"Adding new raw material by employee {employee_id} in branch {branch}")
+
+        # Process raw material data
+        rm_dict = rawMtrl.dict()
+        if rm_dict.get("CostPerBox", None) is not None:
+            rm_dict["CostPerItem"] = rm_dict["CostPerBox"]//rm_dict["QuantityPerBox"]
+            rm_dict["Quantity"] = rm_dict["QuantityBox"]*rm_dict["QuantityPerBox"]
+
+        # Add raw material
+        isAdded, doc = fs_db.add(constants.RAWMTRL, rm_dict)
+
+        if not isAdded:
+            logger.error("Failed to add raw material")
+            return JSONResponse(content='Failed to Add Raw Material.', status_code=500)
+
+        # Create audit entry
+        audit_entry = RawMaterialAudit(
+            RawMaterialId=doc["Id"],
+            Action="ADD",
+            EmployeeId=employee_id,
+            CreatedAt=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            CreatedBy=employee_id,
+            NewValue=rm_dict,
+            Branch=branch
+        )
+        
+        # Add audit entry
+        fs_db.add_audit(audit_entry.dict())
+        logger.info(f"Audit log created for raw material {doc['Id']}")
+
+        return JSONResponse(content=doc, status_code=201)
+
+    except Exception as e:
+        logger.error(f"Error adding raw material: {str(e)}")
+        return JSONResponse(content=str(e), status_code=500)
 
 @app.put("/rawMtrl/update/{doc_id}", dependencies=[Depends(JWTBearer())])
-def update_raw(doc_id: str, doc: dict):
-    isUpdated = fs_db.update_rawmtrl(doc_id, doc)
-    if not isUpdated:
-        JSONResponse(content='Failed to Update.', status_code=500)
-    return JSONResponse(content='Successfully Updated.', status_code=200)
+def update_raw(doc_id: str, doc: dict, request: Request):
+    try:
+        # Get employee info from JWT token
+        token = request.headers.get("authorization").split(" ")[1]
+        dec_token = decodeJWT(token)
+        employee_id = dec_token.get("user_id")
+        branch = dec_token.get("branch")
+
+        logger.info(f"Updating raw material {doc_id} by employee {employee_id} in branch {branch}")
+
+        # Get previous value
+        previous_value = fs_db.get_by_id(constants.RAWMTRL, doc_id)
+
+        # Update raw material
+        isUpdated = fs_db.update_rawmtrl(doc_id, doc)
+        
+        if not isUpdated:
+            logger.error(f"Failed to update raw material {doc_id}")
+            return JSONResponse(content='Failed to Update.', status_code=500)
+
+        # Create audit entry
+        audit_entry = RawMaterialAudit(
+            RawMaterialId=doc_id,
+            Action="EDIT",
+            EmployeeId=employee_id,
+            CreatedAt=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            CreatedBy=employee_id,
+            PreviousValue=previous_value,
+            NewValue=doc,
+            Branch=branch
+        )
+        
+        # Add audit entry
+        fs_db.add_audit(audit_entry.dict())
+        logger.info(f"Audit log created for raw material update {doc_id}")
+
+        return JSONResponse(content='Successfully Updated.', status_code=200)
+
+    except Exception as e:
+        logger.error(f"Error updating raw material: {str(e)}")
+        return JSONResponse(content=str(e), status_code=500)
 
 @app.get("/rawMtrls", dependencies=[Depends(JWTBearer())])
 def get_raw_mtrls():
@@ -583,6 +690,191 @@ def get_all_branches():
         branches_res['Branches'].append(branch.to_dict())
     return JSONResponse(content=branches_res, status_code=200)
 
+@app.get("/api/revenue", dependencies=[Depends(JWTBearer())])
+async def get_revenue(
+    branchCode: str = Query(..., description="Branch code"),
+    startTime: str = Query(..., description="Start time (YYYY-MM-DD HH:mm:ss)"),
+    endTime: str = Query(..., description="End time (YYYY-MM-DD HH:mm:ss)"),
+    retType: str = Query(..., description="Aggregation type (day/month)")
+):
+    try:
+        logger.info(f"Received revenue request - Branch: {branchCode}, Period: {startTime} to {endTime}, Type: {retType}")
+
+        # Validate retType
+        if retType not in ["day", "month"]:
+            logger.error(f"Invalid retType provided: {retType}")
+            return JSONResponse(
+                content={"error": "retType must be either 'day' or 'month'"},
+                status_code=400
+            )
+
+        # Validate date format
+        try:
+            datetime.strptime(startTime, "%Y-%m-%d %H:%M:%S")
+            datetime.strptime(endTime, "%Y-%m-%d %H:%M:%S")
+        except ValueError as e:
+            logger.error(f"Invalid date format: {str(e)}")
+            return JSONResponse(
+                content={"error": "Invalid date format. Use YYYY-MM-DD HH:mm:ss"},
+                status_code=400
+            )
+
+        logger.info("Fetching bills from database...")
+        bills = fs_db.get_revenue_data(startTime, endTime)
+        
+        # Initialize response structure
+        response = {
+            "totalCashCollec": 0,
+            "totalOnlineCollec": 0,
+            "revenueDetails": []
+        }
+
+        revenue_by_date = {}
+        processed_bills = 0
+        skipped_bills = 0
+
+        # Process each bill
+        for bill in bills:
+            try:
+                bill_data = bill.to_dict()
+                payment_mode = bill_data.get("Mode", {})
+                amount = bill_data.get("TotalCost", 0)
+                payment_time = bill_data.get("PaymentTime", "")
+
+                # Skip if payment time is not available
+                if not payment_time:
+                    logger.warning(f"Skipping bill {bill_data.get('Id', 'unknown')}: Missing PaymentTime")
+                    skipped_bills += 1
+                    continue
+
+                # Format date based on retType
+                date_obj = datetime.strptime(payment_time, "%Y-%m-%d %H:%M:%S")
+                date_key = date_obj.strftime("%Y-%m-%d" if retType == "day" else "%Y-%m")
+
+                # Aggregate totals by payment mode
+                if payment_mode.get("type") == "cash":
+                    response["totalCashCollec"] += amount
+                else:
+                    response["totalOnlineCollec"] += amount
+
+                # Aggregate revenue by date
+                if date_key not in revenue_by_date:
+                    revenue_by_date[date_key] = 0
+                revenue_by_date[date_key] += amount
+                processed_bills += 1
+
+            except Exception as e:
+                logger.error(f"Error processing bill {bill_data.get('Id', 'unknown')}: {str(e)}")
+                skipped_bills += 1
+                continue
+
+        # Convert aggregated data to required format
+        response["revenueDetails"] = [
+            {"d": date, "revenue": amount}
+            for date, amount in sorted(revenue_by_date.items())
+        ]
+
+        logger.info(f"Successfully processed {processed_bills} bills, skipped {skipped_bills} bills")
+        logger.info(f"Total revenue - Cash: {response['totalCashCollec']}, Online: {response['totalOnlineCollec']}")
+
+        return JSONResponse(content=response, status_code=200)
+
+    except Exception as e:
+        logger.error(f"Failed to process revenue request: {str(e)}", exc_info=True)
+        return JSONResponse(
+            content={"error": f"Failed to fetch revenue data: {str(e)}"},
+            status_code=500
+        )
+
+@app.get("/api/get-rawmaterial-activity", dependencies=[Depends(JWTBearer())])
+async def get_rawmaterial_activity(
+    raw_material_id: Optional[str] = Query(None, description="Filter by specific raw material ID"),
+    start_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
+    end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
+    action_type: Optional[str] = Query(None, description="Filter by action type (ADD/EDIT/DELETE)")
+):
+    try:
+        logger.info(f"Fetching raw material activity - Material ID: {raw_material_id}, Period: {start_date} to {end_date}, Action: {action_type}")
+
+        # Validate date format if provided
+        if start_date:
+            try:
+                datetime.strptime(start_date, "%Y-%m-%d")
+                # Add time component for start of day
+                start_date = f"{start_date} 00:00:00"
+            except ValueError:
+                logger.error(f"Invalid start_date format: {start_date}")
+                return JSONResponse(
+                    content={"error": "Invalid start_date format. Use YYYY-MM-DD"},
+                    status_code=400
+                )
+
+        if end_date:
+            try:
+                datetime.strptime(end_date, "%Y-%m-%d")
+                # Add time component for end of day
+                end_date = f"{end_date} 23:59:59"
+            except ValueError:
+                logger.error(f"Invalid end_date format: {end_date}")
+                return JSONResponse(
+                    content={"error": "Invalid end_date format. Use YYYY-MM-DD"},
+                    status_code=400
+                )
+
+        # Validate action_type if provided
+        if action_type and action_type not in ["ADD", "EDIT", "DELETE"]:
+            logger.error(f"Invalid action_type: {action_type}")
+            return JSONResponse(
+                content={"error": "action_type must be ADD, EDIT, or DELETE"},
+                status_code=400
+            )
+
+        # Get audit logs from database
+        audit_logs = fs_db.get_raw_material_audit(
+            raw_material_id=raw_material_id,
+            start_date=start_date,
+            end_date=end_date,
+            action_type=action_type
+        )
+
+        # Process audit logs
+        activity_list = []
+        for log in audit_logs:
+            log_data = log.to_dict()
+            
+            # Format the activity entry
+            activity_entry = {
+                "id": log_data.get("Id"),
+                "rawMaterialId": log_data.get("RawMaterialId"),
+                "action": log_data.get("Action"),
+                "employeeId": log_data.get("EmployeeId"),
+                "createdAt": log_data.get("CreatedAt"),
+                "createdBy": log_data.get("CreatedBy"),
+                "branch": log_data.get("Branch"),
+                "changes": {
+                    "previous": log_data.get("PreviousValue"),
+                    "new": log_data.get("NewValue")
+                }
+            }
+            activity_list.append(activity_entry)
+
+        # Sort activities by creation time (newest first)
+        activity_list.sort(key=lambda x: x["createdAt"], reverse=True)
+
+        response = {
+            "total": len(activity_list),
+            "activities": activity_list
+        }
+
+        logger.info(f"Successfully retrieved {len(activity_list)} activity records")
+        return JSONResponse(content=response, status_code=200)
+
+    except Exception as e:
+        logger.error(f"Failed to fetch raw material activity: {str(e)}", exc_info=True)
+        return JSONResponse(
+            content={"error": f"Failed to fetch activity data: {str(e)}"},
+            status_code=500
+        )
 
 # @app.exception_handler(ValidationError)
 # def validation_exception_handler(request: Request, exc: ValidationError):

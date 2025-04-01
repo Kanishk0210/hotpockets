@@ -16,3 +16,4 @@ CANTEEN_TRACKER = 'CanteenTracker'
 BILL_TRACKER = 'BillTracker'
 DAILY_COLLECT = "DailyCollect"
 SAFE_ID = "Safe"
+RAWMTRL_AUDIT = 'RawMaterialAudit'

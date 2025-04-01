@@ -8,5 +8,6 @@ class Inventory(BaseModel):
     Type: str = Field(default=constants.INVENTORY)
     Quantity: Union[float, int]
     Cost: Union[float, int] #Rs
-    Condition: str = Field(regex='^(Good|Average|Poor)$')
+    Condition: str 
+    #= Field(regex='^(Good|Average|Poor)$')
     Remark: str = None

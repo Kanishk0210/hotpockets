@@ -11,7 +11,8 @@ class BankDetail(BaseModel):
 class Employee(BaseModel):
     Id: str = None
     Name: str
-    Gender: str = Field(regex='^(M|F|O)$')
+    Gender: str 
+    #= Field(regex='^(M|F|O)$')
     Phone: str = Field(min_length=10)
     AltPhone: str = None
     Email: EmailStr

@@ -36,3 +36,10 @@ def decodeJWT(token: str) -> dict:
         return decoded_token if decoded_token["expires"] >= time.time() else None
     except:
         return {}
+
+def signJWT_branch(token:str, br_cd: str):
+    decoded_token = decodeJWT(token)
+    decoded_token["branch"] = br_cd
+    token = jwt.encode(decoded_token, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+    return token_response(token, br_cd, decoded_token["permissions"])
