@@ -89,14 +89,25 @@ app.add_middleware(
     # return call_next(request)
 
 def check_user(data: UserLoginSchema):
-    users = fs_db.get_all(constants.EMPLOYEE)
+    users = fs_db.get_all_users()
     br_cd = ""
     for usr in users:
         user = usr.to_dict()
+        print(user)
         user_dec_pass = util.decode_pass(user["Password"])
         if user["Email"] == data.email and user_dec_pass == data.password:
             br_cd = user["Branch"]
             perms = user["Permission"]
+            return True, br_cd, perms
+
+    admins = fs_db.get_all_admins()
+    for admin in admins:
+        admin = admin.to_dict()
+        print(admin)
+        user_dec_pass = util.decode_pass(admin["Password"])
+        if admin["Email"] == data.email and user_dec_pass == data.password:
+            br_cd = admin["Branch"]
+            perms = admin["Permission"]
             return True, br_cd, perms
     return False, None, None
 
@@ -583,6 +594,14 @@ def get_all_branches():
         branches_res['Branches'].append(branch.to_dict())
     return JSONResponse(content=branches_res, status_code=200)
 
+@app.post("/game/revenue", dependencies=[Depends(JWTBearer())])
+def get_revenue(request: dict):
+    print(request)
+    start_time = datetime.strptime(request['start_timestamp'], "%Y-%m-%d %H:%M:%S")
+    end_time = datetime.strptime(request['end_timestamp'], "%Y-%m-%d %H:%M:%S")
+
+    bt_docs = fs_db.get_revenue(start_time, end_time)
+    return JSONResponse(content=bt_docs, status_code=200)
 
 # @app.exception_handler(ValidationError)
 # def validation_exception_handler(request: Request, exc: ValidationError):

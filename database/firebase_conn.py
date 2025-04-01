@@ -175,6 +175,14 @@ class FirebaseConn:
         query = self.target_coll.where(filter=FieldFilter('Type','==',typ))
         return query.stream()
 
+    def get_all_users(self):
+        query = self.target_coll.where(filter=FieldFilter('Type','==',"Employee"))
+        return query.stream()
+
+    def get_all_admins(self):
+        query = self.target_coll.where(filter=FieldFilter('Type','==',"Admin"))
+        return query.stream()
+
     def get_by_id(self, doc_id: str):
         return self.target_coll.document(doc_id).get().to_dict()
 
@@ -648,6 +656,7 @@ class FirebaseConn:
         branch_pld["Id"] = doc_id
         branch_pld[constants.MDFDTMSTMP] = util.get_current_tmstmp_str()
         branch_pld[constants.CREATEDTMSTMP] = util.get_current_tmstmp_str()
+        branch_pld["Code"] = branch_pld["Name"][:5].upper()
 
         self.target_coll.add(branch_pld, doc_id)
 
@@ -656,6 +665,68 @@ class FirebaseConn:
         self.create_collection(branch_pld["Code"]+"-transaction-data")
 
         return True
+
+    def get_revenue(self, start_timestamp, end_timestamp):
+        # Fetch documents without inequality filters
+        query = (
+            self.trans_coll
+            .where('Type', '==', constants.BILL_TRACKER)
+            .where('isPaid', '==', True)
+        )
+
+        revenue = {
+            "data":[],
+            "revenue_summary" : {
+                "GameRevenue": 0,
+                "CanteenRevenue": 0,
+                "TotalRevenue": 0,
+                "Total":0,
+                "Discount":0,
+                "BillCount": 0,
+                "Credit":0,
+                "Cash":0,
+                "Online":0
+            }
+        }
+
+        date_revenue_map = defaultdict(float)
+
+        start_ts = start_timestamp.timestamp()
+        end_ts = end_timestamp.timestamp()
+
+        for bill_doc_st in query.stream():
+            bill_doc = bill_doc_st.to_dict()
+
+            # Ensure createdTimestamp is a valid number before comparison
+            created_ts = datetime.strptime(bill_doc.get("CreatedTmStmp"), "%Y-%m-%d %H:%M:%S").timestamp()
+            created_date = datetime.fromtimestamp(created_ts).strftime("%Y-%m-%d")
+            discount = bill_doc.get("Discount",0)
+
+            total_amount = bill_doc.get("TotalCost", 0) - discount
+            date_revenue_map[created_date] += total_amount
+
+            if created_ts is None:
+                continue  # Skip documents without a valid createdTimestamp
+
+            if start_ts <= created_ts <= end_ts:
+                revenue["data"].append({
+                    "date":"",
+                    "total":""
+                })
+
+                revenue["revenue_summary"]["GameRevenue"] += bill_doc.get("GameCost", 0)
+                revenue["revenue_summary"]["CanteenRevenue"] += bill_doc.get("CanteenCost", 0)
+                revenue["revenue_summary"]["TotalRevenue"] += bill_doc.get("TotalCost", 0)
+                revenue["revenue_summary"]["Total"] += ( bill_doc.get("TotalCost", 0) - discount )
+                revenue["revenue_summary"]["Discount"] += bill_doc.get("Discount", 0)
+                revenue["revenue_summary"]["BillCount"] += 1
+                revenue["revenue_summary"]["Cash"] += sum(bill_doc.get("Mode")["Cash"])
+                revenue["revenue_summary"]["Credit"] += sum(bill_doc.get("Mode")["Credit"])
+                revenue["revenue_summary"]["Online"] += sum(bill_doc.get("Mode")["Online"])
+
+        revenue["data"] = [{"date": date, "amount": amount} for date, amount in date_revenue_map.items()]
+
+        return revenue
 
 
     # def get_next_id_transactional():
