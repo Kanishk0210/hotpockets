@@ -1,6 +1,7 @@
 from database.firebase_conn import FirebaseConn
 from models.GameTracker import GameTrackerEndRequest
 from models.BillTracker import BillTracker, Mode
+from models.Audit import Audit
 from util import util, constants
 from services import daily_collect
 
@@ -8,14 +9,14 @@ class GameService:
     def __init__(self, fs_db: FirebaseConn):
         self.fs_db = fs_db
 
-    def process_generate_bill_old(self, gt_end: GameTrackerEndRequest):
+    def process_generate_bill_old(self, gt_end: GameTrackerEndRequest, audit: Audit):
         try:
             # fetch game tracker
             gt_doc = self.fs_db.get_by_id_trans(gt_end.Id)
             print(gt_doc)
             # update player isPlaying False
             for player in gt_doc.get('Players'):
-                self.fs_db.update_target(player.get('Id'), {"isPlaying": False})
+                self.fs_db.update_target(player.get('Id'), {"isPlaying": False}, audit)
 
             canteen_cost = 0
 
@@ -46,7 +47,7 @@ class GameService:
             bill_tracker = BillTracker(None, gt_doc.get('Id'), game_cost, canteen_cost, 
                 total_cost, False, gt_doc.get("GameId"))
             
-            self.fs_db.add_trans(constants.BILL_TRACKER, bill_tracker.dict())
+            self.fs_db.add_trans(constants.BILL_TRACKER, bill_tracker.dict(), audit)
 
             # update canteen tracker 
             ct_update = {
@@ -54,14 +55,14 @@ class GameService:
             }
             ct_id = gt_doc.get('CanteenTrackerId', None)
             if ct_id is not None:
-                self.fs_db.update_trans(gt_doc.get('CanteenTrackerId'), ct_update)
+                self.fs_db.update_trans(gt_doc.get('CanteenTrackerId'), ct_update, audit)
 
             return True
         except Exception as e:
             print(e)
             return False
 
-    def process_generate_bill(self, gt_id: str):
+    def process_generate_bill(self, gt_id: str, audit: Audit):
         try:
             # fetch game tracker
             gt_doc = self.fs_db.get_by_id_trans(gt_id)
@@ -106,7 +107,7 @@ class GameService:
                         if player['Id'] in gt_doc['GamePlayers']:
                             pending_bill['GameCost'] += div_game_cost
                         pending_bill['TotalCost'] = pending_bill['CanteenCost'] + pending_bill['GameCost']
-                        self.fs_db.update_trans(pending_bill['Id'], pending_bill)
+                        self.fs_db.update_trans(pending_bill['Id'], pending_bill, audit)
                     else:
                         bill_tracker = BillTracker(gt_doc.get('CanteenTrackerId', None), gt_doc.get('Id'), gt_doc.get("GameId"), player['Id'])
                         bill_tracker = bill_tracker.dict()
@@ -118,7 +119,7 @@ class GameService:
                         bill_tracker['TotalCost'] = bill_tracker['CanteenCost'] + bill_tracker['GameCost']
                         bill_tracker['Player'] = player
                         if bill_tracker['TotalCost'] != 0:
-                            self.fs_db.add_trans(constants.BILL_TRACKER, bill_tracker)
+                            self.fs_db.add_trans(constants.BILL_TRACKER, bill_tracker, audit)
             for player in gt_doc.get('Players',[]):
                 if player['Id'] not in ct_plyr_ids:
                     # generate bill for all players
@@ -132,7 +133,7 @@ class GameService:
                         if player['Id'] in gt_doc['GamePlayers']:
                             pending_bill['GameCost'] += div_game_cost
                         pending_bill['TotalCost'] = pending_bill['CanteenCost'] + pending_bill['GameCost']
-                        self.fs_db.update_trans(pending_bill['Id'], pending_bill)
+                        self.fs_db.update_trans(pending_bill['Id'], pending_bill, audit)
                     else:
                         bill_tracker = BillTracker(gt_doc.get('CanteenTrackerId', None), gt_doc.get('Id'), gt_doc.get("GameId"),player['Id'])
                         bill_tracker = bill_tracker.dict()
@@ -149,7 +150,7 @@ class GameService:
             gt_update = {
                 "isBilled": True
             }
-            self.fs_db.update_trans(gt_id, gt_update)
+            self.fs_db.update_trans(gt_id, gt_update, audit)
 
             # update canteen tracker 
             ct_update = {
@@ -157,13 +158,13 @@ class GameService:
             }
             ct_id = gt_doc.get('CanteenTrackerId', None)
             if ct_id is not None:
-                self.fs_db.update_trans(gt_doc.get('CanteenTrackerId'), ct_update)
+                self.fs_db.update_trans(gt_doc.get('CanteenTrackerId'), ct_update, audit)
             return True
         except Exception as e:
             print(e)
             return False
 
-    def process_pay_bill(self, bt_id: str, modes: {}, discount):
+    def process_pay_bill(self, bt_id: str, modes: {}, discount, audit: Audit):
         try:
             # if already paid
             bt_doc = self.fs_db.get_by_id_trans(bt_id)
@@ -175,9 +176,9 @@ class GameService:
                 "Mode": modes,
                 "Discount": discount
             }
-            self.fs_db.update_trans(bt_id, bt_update)
+            self.fs_db.update_trans(bt_id, bt_update, audit)
             # save cash to safe
-            daily_collect.save_cash(sum(modes["Cash"]))
+            daily_collect.save_cash(sum(modes["Cash"]), audit)
 
             # set Mode
             # if credit add credit to player
@@ -186,7 +187,7 @@ class GameService:
             print(e)
             return False
         
-    def process_end_game(self, gt_end: GameTrackerEndRequest):
+    def process_end_game(self, gt_end: GameTrackerEndRequest, audit: Audit):
         try:
             # fetch game tracker
             gt_doc = self.fs_db.get_by_id_trans(gt_end.Id)
@@ -199,7 +200,7 @@ class GameService:
             plyr_cnt = 0
             # update player isPlaying False
             for player in gt_doc.get('Players'):
-                self.fs_db.update_target(player.get('Id'), {"isPlaying": False})
+                self.fs_db.update_target(player.get('Id'), {"isPlaying": False}, audit)
                 plyr_cnt += 1
 
             # calculate game cost
@@ -243,13 +244,13 @@ class GameService:
                 "isCancelled": isCancelled,
                 "GamePlayers": gt_end.GamePlayers
             }
-            self.fs_db.update_trans(gt_end.Id, gt_update)
+            self.fs_db.update_trans(gt_end.Id, gt_update, audit)
             return True
         except Exception as e:
             print(e)
             return False
 
-    def process_ind_canteen_generate_bill(self, ct_id: str):
+    def process_ind_canteen_generate_bill(self, ct_id: str, audit: Audit):
         try:
             # fetch canteen tracker
             ct_doc = self.fs_db.get_by_id_trans(ct_id)
@@ -275,7 +276,7 @@ class GameService:
                     pending_bill['CanteenCost'] += player['Cost']
                     pending_bill['GameCost'] += div_game_cost
                     pending_bill['TotalCost'] = pending_bill['CanteenCost'] + pending_bill['GameCost']
-                    self.fs_db.update_trans(pending_bill['Id'], pending_bill)
+                    self.fs_db.update_trans(pending_bill['Id'], pending_bill, audit)
                 else:
                     bill_tracker = BillTracker(ct_id, None, None, player['Id'])
                     bill_tracker = bill_tracker.dict()
@@ -284,14 +285,14 @@ class GameService:
                     bill_tracker['TotalCost'] = bill_tracker['CanteenCost'] + bill_tracker['GameCost']
                     bill_tracker['Player'] = player
                     if bill_tracker['TotalCost'] != 0:
-                        self.fs_db.add_trans(constants.BILL_TRACKER, bill_tracker)
+                        self.fs_db.add_trans(constants.BILL_TRACKER, bill_tracker, audit)
 
             # update canteen tracker 
             ct_update = {
                 "isActive": False,
                 "isBilled": True
             }
-            self.fs_db.update_trans(ct_id, ct_update)
+            self.fs_db.update_trans(ct_id, ct_update, audit)
             return True
         except Exception as e:
             print(e)

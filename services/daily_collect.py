@@ -1,11 +1,12 @@
 from database.firebase_conn import FirebaseConn
 from util import util, constants
+from models.Audit import Audit
 
 class DailyCollectService:
     def __init__(self, fs_db: FirebaseConn):
         self.fs_db = fs_db
 
-    def update_safe(self, dc: dict):
+    def update_safe(self, dc: dict, audit: Audit):
         safe_id = constants.SAFE_ID
         safe = self.fs_db.get_safe()
 
@@ -16,10 +17,10 @@ class DailyCollectService:
         safe["LastDailyCollectId"] = dc.get("Id")
         safe["MdfdById"] = "Collector"
 
-        self.fs_db.update_safe(safe_id, safe)
+        self.fs_db.update_safe(safe_id, safe, audit)
         return True
 
-    def save_cash(self, cash):
+    def save_cash(self, cash, audit: Audit):
         safe_id = constants.SAFE_ID
         safe = self.fs_db.get_safe()
 
@@ -27,5 +28,5 @@ class DailyCollectService:
         safe["MdfdById"] = "Service"
         safe["AvailableCash"] = safe["AvailableCash"] + cash
 
-        self.fs_db.update_safe(safe_id, safe)
+        self.fs_db.update_safe(safe_id, safe, audit)
         return True

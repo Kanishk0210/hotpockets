@@ -136,7 +136,7 @@ def user_login(user: UserLoginSchema = Body(...)):
 
 @app.delete("/delete/{doc_id}", dependencies=[Depends(JWTBearer())])
 def delete_target(doc_id: str):
-    isDeleted = fs_db.delete_target(doc_id)
+    isDeleted = fs_db.delete_target(doc_id, audit)
     
     if not isDeleted:
         JSONResponse(content='Failed to Delete.', status_code=500)
@@ -238,7 +238,7 @@ def add_raw(rawMtrl: RawMtrl):
 
 @app.put("/rawMtrl/update/{doc_id}", dependencies=[Depends(JWTBearer())])
 def update_raw(doc_id: str, doc: dict):
-    isUpdated = fs_db.update_rawmtrl(doc_id, doc)
+    isUpdated = fs_db.update_rawmtrl(doc_id, doc, audit)
     if not isUpdated:
         JSONResponse(content='Failed to Update.', status_code=500)
     return JSONResponse(content='Successfully Updated.', status_code=200)
@@ -278,7 +278,7 @@ def get_menu_items():
 @app.put("/update/{doc_id}", dependencies=[Depends(JWTBearer())])
 def update(doc_id: str, doc: dict):
     print(doc_id)
-    isUpdated = fs_db.update_target(doc_id, doc)
+    isUpdated = fs_db.update_target(doc_id, doc, audit)
 
     if not isUpdated:
         JSONResponse(content='Failed to Update.', status_code=500)
@@ -302,11 +302,11 @@ def update_trans(doc_id: str, doc: dict):
 
             # update player not playing
             for plyr_upd in del_plyrs:
-                fs_db.update_target(plyr_upd["Id"], {"isPlaying": False})
+                fs_db.update_target(plyr_upd["Id"], {"isPlaying": False}, audit)
             # update player playing
             if doc["Players"] is not None:
                 for player in doc["Players"]:
-                    fs_db.update_target(player["Id"], {"isPlaying": True})
+                    fs_db.update_target(player["Id"], {"isPlaying": True}, audit)
 
     # if canteen tracker update
     if constants.CANTEEN_TRACKER in doc_id:
@@ -329,9 +329,9 @@ def update_trans(doc_id: str, doc: dict):
             for menu in menus:
                 cost += menu["Cost"]* menu["Quan"]
         doc["Cost"] = cost
-        fs_db.update_stock_edit(doc)
+        fs_db.update_stock_edit(doc, audit)
 
-    isUpdated = fs_db.update_trans(doc_id, doc)
+    isUpdated = fs_db.update_trans(doc_id, doc, audit)
 
     
 
@@ -376,7 +376,7 @@ def start_game(gt_doc: GameTracker):
     # update player playing
     if isAdded and gt_doc.Players is not None:
         for player in gt_doc.Players:
-            fs_db.update_target(player.Id, {"isPlaying": True})
+            fs_db.update_target(player.Id, {"isPlaying": True}, audit)
 
     if not isAdded:
         return JSONResponse(content='Failed to Start Game.', status_code=500)
@@ -384,19 +384,19 @@ def start_game(gt_doc: GameTracker):
 
 @app.get("/game/generate_bill/{gt_id}", dependencies=[Depends(JWTBearer())])
 def generate_bill(gt_id: str):
-    if not game.process_generate_bill(gt_id):
+    if not game.process_generate_bill(gt_id, audit):
         return JSONResponse(content='Failed to generate bill.', status_code=500)
     return JSONResponse(content="Bill Generated successfully.", status_code=200)
 
 @app.post("/game/bill/pay/{bt_id}", dependencies=[Depends(JWTBearer())])
 def pay_bill(bt_id:str, modes: dict):
-    if not game.process_pay_bill(bt_id, modes, modes.pop("discount")):
+    if not game.process_pay_bill(bt_id, modes, modes.pop("discount"), audit):
         return JSONResponse(content='Failed to pay bill.', status_code=500)
     return JSONResponse(content="Bill Paid.", status_code=200)
 
 @app.post("/game/end", dependencies=[Depends(JWTBearer())])
 def end_game(gt_end: GameTrackerEndRequest):
-    if not game.process_end_game(gt_end):
+    if not game.process_end_game(gt_end, audit):
         return JSONResponse(content='Failed to End Game.', status_code=500)
     return JSONResponse(content="Game ended successfully.", status_code=200)
 
@@ -437,7 +437,7 @@ def add_canteen(canteen_dict: CanteenTracker):
                 "CanteenTrackerId" : doc['Id']
             }
 
-        fs_db.update_trans(canteen_dict.GameTrackerId, gt_update)
+        fs_db.update_trans(canteen_dict.GameTrackerId, gt_update, audit)
 
     if not isAdded:
         JSONResponse(content='Failed to Add Canteen', status_code=500)
@@ -447,7 +447,7 @@ def add_canteen(canteen_dict: CanteenTracker):
 def update_ct(doc_id: str, doc: dict):
     print(doc_id, doc)
 
-    isUpdated, doc_res = fs_db.update_ct(doc_id, doc)
+    isUpdated, doc_res = fs_db.update_ct(doc_id, doc, audit)
 
     if not isUpdated:
         JSONResponse(content='Failed to Update.', status_code=500)
@@ -455,14 +455,14 @@ def update_ct(doc_id: str, doc: dict):
 
 @app.post("/game/canteen/{gt_id}", dependencies=[Depends(JWTBearer())])
 def add_game_canteen(gt_id: str, doc: dict):
-    isAdded, doc = fs_db.add_game_canteen(gt_id, doc)
+    isAdded, doc = fs_db.add_game_canteen(gt_id, doc, audit)
     if not isAdded:
         JSONResponse(content='Failed to Add.', status_code=500)
     return JSONResponse(content=doc, status_code=200)
 
 @app.post("/ind/canteen", dependencies=[Depends(JWTBearer())])
 def add_ind_canteen(doc: dict):
-    isAdded, doc = fs_db.add_ind_canteen(doc)
+    isAdded, doc = fs_db.add_ind_canteen(doc, audit)
     if not isAdded:
         JSONResponse(content='Failed to Ind Add.', status_code=500)
     return JSONResponse(content=doc, status_code=200)
@@ -479,7 +479,7 @@ def get_ind_canteen_trackers():
 
 @app.get("/ind/canteen/generate_bill/{ct_id}", dependencies=[Depends(JWTBearer())])
 def ind_canteen_generate_bill(ct_id: str):
-    if not game.process_ind_canteen_generate_bill(ct_id):
+    if not game.process_ind_canteen_generate_bill(ct_id, audit):
         return JSONResponse(content='Failed to generate bill.', status_code=500)
     return JSONResponse(content="Bill Generated successfully.", status_code=200)
 
@@ -512,7 +512,7 @@ def get_canteen_tracker_by_gt_id(gt_id: str):
 @app.put("/game/update/{doc_id}", dependencies=[Depends(JWTBearer())])
 def update_game(doc_id: str, doc: dict):
     print(doc_id)
-    isUpdated = fs_db.update_trans(doc_id, doc)
+    isUpdated = fs_db.update_trans(doc_id, doc, audit)
 
     if not isUpdated:
         JSONResponse(content='Failed to Update.', status_code=500)
@@ -560,8 +560,8 @@ def get_daily_collections():
 
 @app.post("/dailycollect", dependencies=[Depends(JWTBearer())])
 def save_dailycollect(dailyCollect: DailyCollect):
-    isAdded, dc = fs_db.add_dailycollect(dailyCollect.dict())
-    isUpdated = daily_collect.update_safe(dc)
+    isAdded, dc = fs_db.add_dailycollect(dailyCollect.dict(), audit)
+    isUpdated = daily_collect.update_safe(dc, audit)
     if not isAdded:
         JSONResponse(content='Failed to Add DailyCollect.', status_code=500)
     if not isUpdated:
@@ -577,7 +577,7 @@ def get_safe():
 
 @app.post("/trash", dependencies=[Depends(JWTBearer())])
 def trash(itm: dict):
-    is_trashed = fs_db.trash(itm)
+    is_trashed = fs_db.trash(itm, audit)
     if not is_trashed:
         JSONResponse(content='Failed to Update Trash.', status_code=500)
     return JSONResponse(content='Successfully Updated Trash.', status_code=200)
@@ -614,7 +614,7 @@ def get_revenue(request: dict):
     return JSONResponse(content=bt_docs, status_code=200)
 
 @app.post("/logs", dependencies=[Depends(JWTBearer())])
-def get_revenue(request: dict):
+def get_logs(request: dict):
 
     bt_docs = fs_db.get_audit_logs(request)
     return JSONResponse(content=bt_docs, status_code=200)
