@@ -9,7 +9,7 @@ from models.Audit import Audit
 import sys
 
 from datetime import datetime
-from collections imort defaultdict
+from collections import defaultdict
 import uuid
 
 cred = credentials.Certificate('resources/hotpockets-test-firebase-adminsdk-4gr44-d3d84f282d.json')
@@ -139,9 +139,9 @@ class FirebaseConn:
     def get_safe(self):
         return self.source_coll.document(constants.SAFE_ID).get().to_dict()
 
-    def update_safe(self, doc_id: str, doc: dict):
+    def update_safe(self, doc_id: str, doc: dict, audit: Audit):
         doc_ref = self.source_coll.document(doc_id)
-        
+        self.audit_log(audit, doc_id, doc.get("Type",""), constants.AC_UPDATE, doc_ref.get().to_dict(), doc)
         doc_ref.update(doc)
         return True
 
@@ -197,31 +197,38 @@ class FirebaseConn:
         print(res)
         return res
 
-    def add(self, typ: str, doc: dict):
+    def add(self, typ: str, doc: dict, audit: Audit):
         doc_id = typ+'::'+str(self.get_next_id(typ))
         doc[constants.ID] = doc_id
         doc[constants.MDFDTMSTMP] = util.get_current_tmstmp_str()
         doc[constants.CREATEDTMSTMP] = util.get_current_tmstmp_str()
         self.target_coll.add(doc, doc_id)
+        self.audit_log(audit, doc_id, typ, constants.AC_ADD, None, doc)
         return True, doc
 
-    def update(self, doc_id: str, doc: dict):
+    def update(self, doc_id: str, doc: dict, audit: Audit):
         doc_ref = self.target_coll.document(doc_id)
         doc[constants.MDFDTMSTMP] = util.get_current_tmstmp_str()
+        self.audit_log(audit, doc_id, doc.get(constants.TYPE,""), constants.AC_UPDATE, doc_ref.get().to_dict(), doc)
         doc_ref.update(doc)
         return True
 
-    def update_rawmtrl(self, doc_id: str, doc: dict):
+    def update_rawmtrl(self, doc_id: str, doc: dict, audit: Audit):
         doc_ref = self.target_coll.document(doc_id)
         ex_doc = doc_ref.get().to_dict()
         ex_doc[constants.MDFDTMSTMP] = util.get_current_tmstmp_str()
         ex_doc["QuantityBox"] = ex_doc["QuantityBox"] + doc["QuantityBox"]
         ex_doc["Quantity"] = ex_doc["Quantity"] + doc["QuantityBox"]*ex_doc["QuantityPerBox"]
+        self.audit_log(audit, doc_id, ex_doc.get("Type",""), constants.AC_UPDATE, doc_ref.get().to_dict(), ex_doc)
         doc_ref.update(ex_doc)
         return True
 
-    def delete_target(self, doc_id: str):
+    def delete_target(self, doc_id: str, audit: Audit):
+        
         doc_ref = self.target_coll.document(doc_id)
+        doc = doc_ref.get().to_dict()
+        self.audit_log(audit, doc_id, doc.get("Type",""), constants.AC_DELETE, doc, None)
+
         doc_ref.delete()
         return True
 
@@ -233,6 +240,7 @@ class FirebaseConn:
         doc[constants.MDFDTMSTMP] = util.get_current_tmstmp_str()
         doc[constants.CREATEDTMSTMP] = util.get_current_tmstmp_str()
         self.trans_coll.add(doc, doc_id)
+        self.audit_log(audit, doc_id, typ, constants.AC_ADD, None, doc)
         return True, doc
 
     def get_all_trans(self, typ: str):
@@ -263,12 +271,14 @@ class FirebaseConn:
         doc_ref = self.target_coll.document(doc_id)
         doc[constants.MDFDTMSTMP] = util.get_current_tmstmp_str()
         doc_ref.update(doc)
+        self.audit_log(audit, doc_id, doc.get(constants.TYPE,""), constants.AC_UPDATE, doc_ref.get().to_dict(), doc)
         return True, doc
 
     def update_trans(self, doc_id: str, doc: dict):
         doc_ref = self.trans_coll.document(doc_id)
         doc[constants.MDFDTMSTMP] = util.get_current_tmstmp_str()
         doc_ref.update(doc)
+        self.audit_log(audit, doc_id, doc.get(constants.TYPE,""), constants.AC_UPDATE, doc_ref.get().to_dict(), doc)
         return True, doc
 
     def add_game_canteen(self, gt_id: str, doc: dict):
@@ -296,6 +306,7 @@ class FirebaseConn:
         else:
             ex_ct_doc_ref = self.trans_coll.document(gt_doc["CanteenTrackerId"])
             ex_ct_doc = ex_ct_doc_ref.get().to_dict()
+            ex_ct_doc_audit = ex_ct_doc_ref.get().to_dict()
 
         if doc["PlayerId"] == None:
             for mitem_to_add in doc["MenuItems"]:
@@ -351,10 +362,13 @@ class FirebaseConn:
 
         if isNew:
             self.trans_coll.add(ex_ct_doc, ex_ct_doc["Id"])
+            self.audit_log(audit, ex_ct_doc["Id"], typ, constants.AC_ADD, None, ex_ct_doc)
         else:
             ex_ct_doc_ref.update(ex_ct_doc)
+            self.audit_log(audit, ex_ct_doc["Id"], ex_ct_doc.get(constants.TYPE,""), constants.AC_UPDATE, ex_ct_doc_audit, ex_ct_doc)
         
         gt_doc["CanteenTrackerId"] = ex_ct_doc["Id"]
+        self.audit_log(audit, gt_doc["Id"], gt_doc.get(constants.TYPE,""), constants.AC_UPDATE, gt_doc_ref.get().to_dict(), gt_doc)
         gt_doc_ref.update(gt_doc)
 
         self.update_stock(doc)
@@ -383,6 +397,8 @@ class FirebaseConn:
         else:
             ex_ct_doc_ref = self.trans_coll.document(doc["Id"])
             ex_ct_doc = ex_ct_doc_ref.get().to_dict()
+            ex_ct_doc_audit = ex_ct_doc_ref.get().to_dict()
+            
 
         plyrFound = False
         player = {}
@@ -422,8 +438,10 @@ class FirebaseConn:
 
         if isNew:
             self.trans_coll.add(ex_ct_doc, ex_ct_doc["Id"])
+            self.audit_log(audit, doc_id, typ, constants.AC_ADD, None, doc)
         else:
             ex_ct_doc_ref.update(ex_ct_doc)
+            self.audit_log(audit, doc["Id"], doc.get(constants.TYPE,""), constants.AC_UPDATE, ex_ct_doc_audit, ex_ct_doc)
 
         self.update_stock(doc)
         return True, ex_ct_doc
@@ -443,6 +461,7 @@ class FirebaseConn:
             mitem_doc["Remaining"] = remaining
             self.update(mitem_doc["Id"], mitem_doc)
 
+
     def update_stock_edit(self, doc: dict):
         self.update_stock(doc)
 
@@ -460,6 +479,7 @@ class FirebaseConn:
     def update_ct(self, doc_id: str, doc: dict):
         doc_ref = self.trans_coll.document(doc_id)
         ex_doc = doc_ref.get().to_dict()
+        ex_doc_audit = doc_ref.get().to_dict()
         print(ex_doc)
 
         if "MenuItems" in doc and doc["MenuItems"] is not None and doc["MenuItems"] != []:
@@ -524,6 +544,8 @@ class FirebaseConn:
         ex_doc["Cost"] = cost
 
         doc_ref.update(ex_doc)
+        self.audit_log(audit, ex_doc["Id"], ex_doc.get(constants.TYPE,""), constants.AC_UPDATE, ex_doc_audit, ex_doc)
+
         self.update_stock_edit(ex_doc)
         return True, ex_doc
 
@@ -736,18 +758,25 @@ class FirebaseConn:
 
         return revenue
 
-    def audit_log(self, audit: Audit, doc_id, action, pr_value, nw_value):
-        audit.Id = constants.AUDIT + "::" + uuid.uuid4()
+    def audit_log(self, audit: Audit, doc_id, doc_type, action, pr_value, nw_value):
+        audit.Id = constants.AUDIT + "::" + str(uuid.uuid4())
         audit.CreatedTmStmp = util.get_current_tmstmp_str()
         audit.DocId = doc_id
         audit.Action = action
         audit.PreviousValue = pr_value
         audit.NewValue = nw_value
+        audit.DocType = doc_type
 
-        self.store.collection(self.trans_coll_str).add(audit.dict(), audit.Id)
+        self.store.collection("audit-logs").add(audit.dict(), audit.Id)
 
 
+    def get_audit_logs(request: dict):
+        print(request)
+        start_time = datetime.strptime(request['start_timestamp'], "%Y-%m-%d %H:%M:%S")
+        end_time = datetime.strptime(request['end_timestamp'], "%Y-%m-%d %H:%M:%S")
+        actionn = request["action"]
 
+        return {}
 
     # def get_next_id_transactional():
     #     with store.transaction() as transaction:

@@ -1,6 +1,7 @@
 import random
 import string
 import base64
+from datetime import datetime
 # import ngrok
 
 from fastapi import FastAPI, APIRouter, Body, Depends
@@ -42,7 +43,10 @@ app = FastAPI()
 class BranchMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         print(request.headers)
-        global fs_db, game, daily_collect, audit
+        global fs_db
+        global game
+        global daily_collect
+        global audit
         if request.url.path == "/user/login":
             fs_db = FirebaseConn("")
             return await call_next(request)
@@ -57,7 +61,7 @@ class BranchMiddleware(BaseHTTPMiddleware):
 
         print(fs_db.target_coll_str)
 
-        audit = Audit(empId, empName, br)
+        audit = Audit(EmployeeId=empId, EmployeeName= empName, Branch = br)
 
         return await call_next(request)
 
@@ -103,7 +107,7 @@ def check_user(data: UserLoginSchema):
         if user["Email"] == data.email and user_dec_pass == data.password:
             br_cd = user["Branch"]
             perms = user["Permission"]
-            return True, br_cd, perms, user["Name"]
+            return True, br_cd, perms, user["Id"], user["Name"]
 
     admins = fs_db.get_all_admins()
     for admin in admins:
@@ -113,8 +117,8 @@ def check_user(data: UserLoginSchema):
         if admin["Email"] == data.email and user_dec_pass == data.password:
             br_cd = admin["Branch"]
             perms = admin["Permission"]
-            return True, br_cd, perms, admin["Name"]
-    return False, None, None, None
+            return True, br_cd, perms, admin["Id"], admin["Name"]
+    return False, None, None, None, None
 
 @app.get("/", dependencies= [Depends(JWTBearer())] ,tags=["root"])
 async def root():
@@ -122,9 +126,10 @@ async def root():
 
 @app.post("/user/login", tags=["user"])
 def user_login(user: UserLoginSchema = Body(...)):
-    is_user, br_cd, perms, usr_nm = check_user(user)
+    is_user, br_cd, perms, usr_id, usr_nm = check_user(user)
     if is_user:
-        fs_db.audit_log(audit, None, constants.AC_LOGIN, None, None)
+        audit = audit = Audit(EmployeeId=usr_id, EmployeeName= usr_nm, Branch = br_cd)
+        fs_db.audit_log(audit, None,constants.EMPLOYEE, constants.AC_LOGIN, None, None)
         return signJWT(user.email, usr_nm, br_cd, perms)
     return JSONResponse(content="error: Wrong login details!", status_code=401)
     
@@ -151,7 +156,7 @@ def get_players():
 def add_player(player: Player):
     #chars = string.ascii_letters + string.digits
     # doc_id = 'Player::'+ player.name[:3].upper()+'_'+player.phone[-4:]+'_'+''.join(random.choices(chars, k=4)) # Player::ASH_6891_oWtp
-    isAdded = fs_db.add(constants.PLAYER, player.dict())
+    isAdded = fs_db.add(constants.PLAYER, player.dict(), audit)
 
     if not isAdded: 
         JSONResponse(content='Failed to Add Player.', status_code=500)
@@ -168,7 +173,7 @@ def get_games():
 def add_game(game: Game):
     #chars = string.ascii_letters + string.digits
     # doc_id = 'Player::'+ player.name[:3].upper()+'_'+player.phone[-4:]+'_'+''.join(random.choices(chars, k=4)) # Player::ASH_6891_oWtp
-    isAdded = fs_db.add(constants.GAME, game.dict())
+    isAdded = fs_db.add(constants.GAME, game.dict(), audit)
 
     if not isAdded:
         JSONResponse(content='Failed to Add Game.', status_code=500)
@@ -181,7 +186,7 @@ def add_emp(emp: Employee):
 
     emp.Password = util.encode_pass(emp.Password)
 
-    isAdded = fs_db.add(constants.EMPLOYEE, emp.dict())
+    isAdded = fs_db.add(constants.EMPLOYEE, emp.dict(), audit)
 
     if not isAdded:
         JSONResponse(content='Failed to Add Employee.', status_code=500)
@@ -201,7 +206,7 @@ def get_emps():
 def add_inv(inv: Inventory):
     #chars = string.ascii_letters + string.digits
     # doc_id = 'Player::'+ player.name[:3].upper()+'_'+player.phone[-4:]+'_'+''.join(random.choices(chars, k=4)) # Player::ASH_6891_oWtp
-    isAdded = fs_db.add(constants.INVENTORY, inv.dict())
+    isAdded = fs_db.add(constants.INVENTORY, inv.dict(), audit)
 
     if not isAdded:
         JSONResponse(content='Failed to Add Inventory.', status_code=500)
@@ -225,7 +230,7 @@ def add_raw(rawMtrl: RawMtrl):
     if rm_dict.get("CostPerBox",None) is not None:
         rm_dict["CostPerItem"] = rm_dict["CostPerBox"]//rm_dict["QuantityPerBox"]
         rm_dict["Quantity"] = rm_dict["QuantityBox"]*rm_dict["QuantityPerBox"]
-    isAdded, doc = fs_db.add(constants.RAWMTRL, rm_dict)
+    isAdded, doc = fs_db.add(constants.RAWMTRL, rm_dict, audit)
 
     if not isAdded:
         JSONResponse(content='Failed to Add Raw Material.', status_code=500)
@@ -252,7 +257,7 @@ def get_raw_mtrls():
 def add_menu_item(menu: Menu):
     #chars = string.ascii_letters + string.digits
     # doc_id = 'Player::'+ player.name[:3].upper()+'_'+player.phone[-4:]+'_'+''.join(random.choices(chars, k=4)) # Player::ASH_6891_oWtp
-    isAdded = fs_db.add(constants.MENU, menu.dict())
+    isAdded = fs_db.add(constants.MENU, menu.dict(), audit)
 
     if not isAdded:
         JSONResponse(content='Failed to Add Menu Item.', status_code=500)
@@ -425,7 +430,7 @@ def add_canteen(canteen_dict: CanteenTracker):
         canteen_dict.Cost = cost
 
 
-        isAdded, doc = fs_db.add_trans(constants.CANTEEN_TRACKER, canteen_dict.dict())
+        isAdded, doc = fs_db.add_trans(constants.CANTEEN_TRACKER, canteen_dict.dict(), audit)
 
         # update game tracker with ct id
         gt_update = {
@@ -584,12 +589,12 @@ def get_trash():
         return JSONResponse(content='Document not present in DB.', status_code=500)
     return JSONResponse(content=trash, status_code=200)
 
-@app.post("/branch", dependencies=[Depends(JWTBearer())])
-def add_branch(branch: Branch):
-    is_added = fs_db.add_branch(branch.dict())
-    if not is_added:
-        return JSONResponse(content='Branch not created.', status_code=500)
-    return JSONResponse(content="Branch Created Successfully.", status_code=200)
+# @app.post("/branch", dependencies=[Depends(JWTBearer())])
+# def add_branch(branch: Branch):
+#     is_added = fs_db.add_branch(branch.dict())
+#     if not is_added:
+#         return JSONResponse(content='Branch not created.', status_code=500)
+#     return JSONResponse(content="Branch Created Successfully.", status_code=200)
 
 @app.get("/branches", dependencies=[Depends(JWTBearer())])
 def get_all_branches():
@@ -606,6 +611,12 @@ def get_revenue(request: dict):
     end_time = datetime.strptime(request['end_timestamp'], "%Y-%m-%d %H:%M:%S")
 
     bt_docs = fs_db.get_revenue(start_time, end_time)
+    return JSONResponse(content=bt_docs, status_code=200)
+
+@app.post("/logs", dependencies=[Depends(JWTBearer())])
+def get_revenue(request: dict):
+
+    bt_docs = fs_db.get_audit_logs(request)
     return JSONResponse(content=bt_docs, status_code=200)
 
 # @app.exception_handler(ValidationError)
