@@ -244,6 +244,14 @@ class FirebaseConn:
         self.audit_log(audit, doc_id, typ, constants.AC_ADD, None, doc)
         return True, doc
 
+    def add_trans_by_id(self, doc_id: str, doc: dict, audit: Audit):
+        doc[constants.ID] = doc_id
+        doc[constants.MDFDTMSTMP] = util.get_current_tmstmp_str()
+        doc[constants.CREATEDTMSTMP] = util.get_current_tmstmp_str()
+        self.trans_coll.add(doc, doc_id)
+        self.audit_log(audit, doc_id, doc["Type"], constants.AC_ADD, None, doc)
+        return True, doc
+
     def get_all_trans(self, typ: str):
         query = self.trans_coll.where('Type','==',typ)
         return query.stream()

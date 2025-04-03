@@ -3,11 +3,12 @@ from models.GameTracker import GameTrackerEndRequest
 from models.BillTracker import BillTracker, Mode
 from models.Audit import Audit
 from util import util, constants
-from services import daily_collect
+from services.daily_collect import DailyCollectService
 
 class GameService:
     def __init__(self, fs_db: FirebaseConn):
         self.fs_db = fs_db
+        self.daily_collect = DailyCollectService(fs_db)
 
     def process_generate_bill_old(self, gt_end: GameTrackerEndRequest, audit: Audit):
         try:
@@ -144,7 +145,7 @@ class GameService:
                             bill_tracker['GameCost'] = 0
                         bill_tracker['TotalCost'] = bill_tracker['CanteenCost'] + bill_tracker['GameCost']
                         if bill_tracker['TotalCost'] != 0:
-                            self.fs_db.add_trans(constants.BILL_TRACKER, bill_tracker)
+                            self.fs_db.add_trans(constants.BILL_TRACKER, bill_tracker, audit)
 
             # update game tracker
             gt_update = {
@@ -178,10 +179,32 @@ class GameService:
             }
             self.fs_db.update_trans(bt_id, bt_update, audit)
             # save cash to safe
-            daily_collect.save_cash(sum(modes["Cash"]), audit)
+            print(modes["Cash"])
+            print(sum(modes["Cash"]))
+            self.daily_collect.save_cash(sum(modes["Cash"]), audit)
 
             # set Mode
             # if credit add credit to player
+            if modes.get("Credit") and sum(modes["Credit"]) > 0:
+                player_id = bt_doc["PlayerId"]
+                player_doc = self.fs_db.get_by_id(player_id)
+                if player_doc:
+                    current_credit = player_doc.get("Credit", 0)
+                    new_credit = current_credit + sum(modes["Credit"])
+                    player_update = {"Credit": new_credit}
+                    self.fs_db.update_target(player_id, player_update, audit)
+
+                    # Check if a Credit document already exists for this player.  If not, create one.
+                    credit_id = constants.CREDIT + "::" + player_id
+                    credit_doc = self.fs_db.get_by_id_trans(credit_id)
+                    if not credit_doc:
+                        cr = player_doc["Credit"]
+                        credit_doc = Credit(Id=credit_id, PlayerId=player_id, Credit=cr, Debit={util.get_current_tmstmp_str(): amount}).dict()
+                        self.fs_db.add_trans_by_id(credit_id, credit_doc, audit)
+                    else:
+                        credit_doc["Debit"][util.get_current_tmstmp_str()] = amount
+                        credit_doc["Credit"] = new_credit
+                        self.fs_db.update_trans(credit_id, credit_doc, audit)
             return True
         except Exception as e:
             print(e)

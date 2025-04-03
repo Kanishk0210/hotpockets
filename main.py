@@ -28,6 +28,8 @@ from models.CanteenTracker import CanteenTracker
 from models.DailyCollect import DailyCollect
 from models.Branch import Branch
 from models.Audit import Audit
+from models.Credit import Credit
+
 from util import util, constants
 # from auth import auth_bearer, auth_handler
 from auth.auth_bearer import JWTBearer
@@ -104,7 +106,7 @@ def check_user(data: UserLoginSchema):
         user = usr.to_dict()
         print(user)
         user_dec_pass = util.decode_pass(user["Password"])
-        if user["Email"] == data.email and user_dec_pass == data.password:
+        if user["Email"] == data.email and user_dec_pass == data.password and user["isActive"]:
             br_cd = user["Branch"]
             perms = user["Permission"]
             return True, br_cd, perms, user["Id"], user["Name"]
@@ -114,7 +116,7 @@ def check_user(data: UserLoginSchema):
         admin = admin.to_dict()
         print(admin)
         user_dec_pass = util.decode_pass(admin["Password"])
-        if admin["Email"] == data.email and user_dec_pass == data.password:
+        if admin["Email"] == data.email and user_dec_pass == data.password and admin["isActive"]:
             br_cd = admin["Branch"]
             perms = admin["Permission"]
             return True, br_cd, perms, admin["Id"], admin["Name"]
@@ -271,7 +273,7 @@ def get_menu_items():
     menu_items_res = {'MenuItems':[]}
     for menu_item in menu_items:
         menu = menu_item.to_dict()
-        menu["Remaining"] = fs_db.get_remaining_stock(menu)
+        # menu["Remaining"] = fs_db.get_remaining_stock(menu)
         menu_items_res['MenuItems'].append(menu)
     return JSONResponse(content=menu_items_res, status_code=200)
 
@@ -589,12 +591,12 @@ def get_trash():
         return JSONResponse(content='Document not present in DB.', status_code=500)
     return JSONResponse(content=trash, status_code=200)
 
-# @app.post("/branch", dependencies=[Depends(JWTBearer())])
-# def add_branch(branch: Branch):
-#     is_added = fs_db.add_branch(branch.dict())
-#     if not is_added:
-#         return JSONResponse(content='Branch not created.', status_code=500)
-#     return JSONResponse(content="Branch Created Successfully.", status_code=200)
+@app.post("/branch", dependencies=[Depends(JWTBearer())])
+def add_branch(branch: Branch):
+    is_added = fs_db.add_branch(branch.dict())
+    if not is_added:
+        return JSONResponse(content='Branch not created.', status_code=500)
+    return JSONResponse(content="Branch Created Successfully.", status_code=200)
 
 @app.get("/branches", dependencies=[Depends(JWTBearer())])
 def get_all_branches():
@@ -618,6 +620,43 @@ def get_logs(request: dict):
 
     bt_docs = fs_db.get_audit_logs(request)
     return JSONResponse(content=bt_docs, status_code=200)
+
+@app.post("/player/debit", dependencies=[Depends(JWTBearer())], tags=["credit"])
+async def add_debit(debit_request: dict):
+    """Adds a debit entry to a player's credit record."""
+    try:
+        player_id = debit_request["PlayerId"]
+        amount = debit_request["Amount"]
+        credit_id = constants.CREDIT + "::" + player_id
+
+        # Check if a Credit document already exists for this player.  If not, create one.
+        player_doc = fs_db.get_by_id(player_id)
+        credit_doc = fs_db.get_by_id_trans(credit_id)
+        if not credit_doc:
+            cr = player_doc["Credit"]
+            credit_doc = Credit(Id=credit_id, PlayerId=player_id, Credit=cr, Debit={util.get_current_tmstmp_str(): amount}).dict()
+            fs_db.add_trans_by_id(credit_id, credit_doc, audit)
+        else:
+            credit_doc["Debit"][util.get_current_tmstmp_str()] = amount
+
+        # Update the debit dictionary.  Handle potential errors (like invalid amount).
+        if amount <= 0:
+            return JSONResponse(content="Invalid debit amount.", status_code=500)
+        
+        credit_doc["Credit"] = credit_doc["Credit"] - amount
+        fs_db.update_trans(credit_id, credit_doc, audit)
+
+        # Update player doc credit
+        
+        if player_doc:
+            player_update = {"Credit": credit_doc["Credit"]}
+            fs_db.update_target(player_id, player_update, audit)
+        return JSONResponse(content="message: Debit added successfully", status_code=200)
+
+    except Exception as e:
+        print(e)
+        return JSONResponse(content="Error adding debit", status_code=500)
+
 
 # @app.exception_handler(ValidationError)
 # def validation_exception_handler(request: Request, exc: ValidationError):

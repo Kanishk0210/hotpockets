@@ -22,3 +22,4 @@ class Employee(BaseModel):
     Permission: str
     Branch: str
     Password: str
+    isActive: bool = False
