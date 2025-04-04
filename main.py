@@ -1,3 +1,4 @@
+import sys
 import random
 import string
 import base64
@@ -49,7 +50,7 @@ class BranchMiddleware(BaseHTTPMiddleware):
         global game
         global daily_collect
         global audit
-        if request.url.path == "/user/login":
+        if request.url.path == "/user/login" or request.url.path == "/docs":
             fs_db = FirebaseConn("")
             return await call_next(request)
         b,token = request.headers.get("authorization","").split(" ")
@@ -265,8 +266,8 @@ def add_menu_item(menu: Menu):
         JSONResponse(content='Failed to Add Menu Item.', status_code=500)
     return JSONResponse(content='Successfully added Menu Item.', status_code=200)
 
-@app.get("/menuItems", dependencies=[Depends(JWTBearer())])
-def get_menu_items():
+@app.get("/menuItems2", dependencies=[Depends(JWTBearer())])
+def get_menu_items2():
 
     menu_items = fs_db.get_all(constants.MENU)
 
@@ -276,6 +277,40 @@ def get_menu_items():
         # menu["Remaining"] = fs_db.get_remaining_stock(menu)
         menu_items_res['MenuItems'].append(menu)
     return JSONResponse(content=menu_items_res, status_code=200)
+
+
+# new
+@app.get("/menuItems", dependencies=[Depends(JWTBearer())])
+def get_menu_items():
+    # Fetch all menu items and raw materials
+    menu_items = fs_db.get_all(constants.MENU)
+    raw_materials = fs_db.get_all(constants.RAWMTRL)
+
+    # Build a map: {RawMtrlId: Quantity}
+    raw_mtrl_qty_map = {}
+    for rm_doc in raw_materials:
+        rm = rm_doc.to_dict()
+        raw_mtrl_qty_map[rm["Id"]] = rm.get("Quantity", 0)
+
+    menu_items_res = {'MenuItems': []}
+
+    # Process each menu item
+    for menu_doc in menu_items:
+        menu = menu_doc.to_dict()
+
+        # Calculate remaining stock for the menu item using map
+        remaining = sys.maxsize
+        for ingnt in menu.get("Ingredients", []):
+            raw_qty = raw_mtrl_qty_map.get(ingnt["RawMtrlId"], 0)
+            if raw_qty < remaining:
+                remaining = raw_qty
+
+        menu["Remaining"] = remaining
+        menu_items_res['MenuItems'].append(menu)
+
+    return JSONResponse(content=menu_items_res, status_code=200)
+
+# new
 
 @app.put("/update/{doc_id}", dependencies=[Depends(JWTBearer())])
 def update(doc_id: str, doc: dict):
