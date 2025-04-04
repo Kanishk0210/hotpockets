@@ -11,6 +11,7 @@ import sys
 from datetime import datetime
 from collections import defaultdict
 import uuid
+from typing import Union, List
 
 cred = credentials.Certificate('resources/hotpockets-test-firebase-adminsdk-4gr44-d3d84f282d.json')
 
@@ -786,6 +787,14 @@ class FirebaseConn:
         # actionn = req["action"]
 
         return {}
+
+    def batch_update(self, updates: List[dict], audit):
+        batch = self.store.batch()
+        for upd in updates:
+            ref = self.target_coll.document(upd["doc_id"])
+            batch.update(ref, upd["data"])
+        batch.commit()
+
 
     # def get_next_id_transactional():
     #     with store.transaction() as transaction:

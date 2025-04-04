@@ -323,8 +323,8 @@ def update(doc_id: str, doc: dict):
 
 # Transaction
 
-@app.put("/trans/update/{doc_id}", dependencies=[Depends(JWTBearer())])
-def update_trans(doc_id: str, doc: dict):
+@app.put("/trans/update2/{doc_id}", dependencies=[Depends(JWTBearer())])
+def update_trans2(doc_id: str, doc: dict):
     print(doc_id)
     
     # if game tracker update
@@ -375,6 +375,78 @@ def update_trans(doc_id: str, doc: dict):
     if not isUpdated:
         JSONResponse(content='Failed to Update.', status_code=500)
     return JSONResponse(content='Successfully Updated.', status_code=200)
+
+#new
+@app.put("/trans/update/{doc_id}", dependencies=[Depends(JWTBearer())])
+def update_trans(doc_id: str, doc: dict):
+    print(doc_id)
+
+    # Batch for player updates
+    batch_updates = []
+
+    # If Game Tracker update
+    if constants.GAME_TRACKER in doc_id:
+        gt_doc = fs_db.get_by_id_trans(doc_id)
+        if gt_doc.get("isActive"):
+
+            old_players = gt_doc.get("Players", []) or []
+            new_players = doc.get("Players", []) or []
+
+            old_player_ids = {p["Id"] for p in old_players}
+            new_player_ids = {p["Id"] for p in new_players}
+
+            # Players to mark as not playing
+            to_mark_false = old_player_ids - new_player_ids
+            # Players to mark as playing
+            to_mark_true = new_player_ids - old_player_ids
+
+            for player_id in to_mark_false:
+                batch_updates.append({
+                    "doc_id": player_id,
+                    "data": {"isPlaying": False}
+                })
+
+            for player_id in to_mark_true:
+                batch_updates.append({
+                    "doc_id": player_id,
+                    "data": {"isPlaying": True}
+                })
+
+    # If Canteen Tracker update
+    if constants.CANTEEN_TRACKER in doc_id:
+        cost = 0
+        players = doc.get("Players", [])
+        if players is not None:
+            for player in players:
+                player["Cost"] = 0
+                menus = player.get("MenuItems", [])
+                if menus is not None:
+                    for menu in menus:
+                        player["Cost"] += menu["Cost"] * menu["Quan"]
+                        cost += menu["Cost"] * menu["Quan"]
+        doc["Players"] = players
+
+        menus = doc.get("MenuItems", [])
+        if menus is not None:
+            for menu in menus:
+                cost += menu["Cost"] * menu["Quan"]
+
+        doc["Cost"] = cost
+        fs_db.update_stock_edit(doc, audit)
+
+    # Apply player updates in batch
+    if batch_updates:
+        fs_db.batch_update(batch_updates, audit)
+
+    # Final doc update
+    isUpdated = fs_db.update_trans(doc_id, doc, audit)
+
+    if not isUpdated:
+        return JSONResponse(content='Failed to Update.', status_code=500)
+    return JSONResponse(content='Successfully Updated.', status_code=200)
+
+#new
+
 
 @app.get("/game/track", dependencies=[Depends(JWTBearer())]) 
 def get_game_trackers():
