@@ -2,6 +2,7 @@ from database.firebase_conn import FirebaseConn
 from models.GameTracker import GameTrackerEndRequest
 from models.BillTracker import BillTracker, Mode
 from models.Audit import Audit
+from models.Credit import Credit
 from util import util, constants
 from services.daily_collect import DailyCollectService
 
@@ -63,7 +64,7 @@ class GameService:
             print(e)
             return False
 
-    def process_generate_bill(self, gt_id: str, audit: Audit):
+    def process_generate_bill2(self, gt_id: str, audit: Audit):
         try:
             # fetch game tracker
             gt_doc = self.fs_db.get_by_id_trans(gt_id)
@@ -165,6 +166,111 @@ class GameService:
             print(e)
             return False
 
+#new
+    def process_generate_bill(self, gt_id: str, audit: Audit):
+        try:
+            # fetch game tracker
+            gt_doc = self.fs_db.get_by_id_trans(gt_id)
+            print(gt_doc)
+            # if already billed
+            if gt_doc["isBilled"] is True:
+                return True
+
+            game_cost = gt_doc["Cost"]
+            dur = gt_doc["DurationInMin"]
+            div_game_cost = round(game_cost // len(gt_doc['GamePlayers']))
+            ct_plyr_ids = []
+
+            if gt_doc.get('CanteenTrackerId', None) is not None:
+                # fetch canteen tracker
+                ct_doc = self.fs_db.get_by_id_trans(gt_doc.get("CanteenTrackerId"))
+
+                # add table canteen cost if present
+                menus = ct_doc.get("MenuItems", None)
+                table_canteen_cost = 0
+                if menus is not None:
+                    for menu in menus:
+                        table_canteen_cost += menu["Cost"] * menu["Quan"]
+
+                div_game_cost = round((game_cost + table_canteen_cost) / len(gt_doc['GamePlayers']))
+
+                # generate bill for all players
+                for player in ct_doc.get('Players', []):
+                    player_id = player['Id']
+                    ct_plyr_ids.append(player_id)
+                    # check for pending bill
+                    pending_bills = self.fs_db.check_pending_bill(player_id)
+                    count = len(pending_bills)
+
+                    if count > 0:
+                        pending_bill = pending_bills[0]
+                        pending_bill['CanteenCost'] += player['Cost']
+                        if player_id in gt_doc['GamePlayers']:
+                            pending_bill['GameCost'] += div_game_cost
+                        pending_bill['TotalCost'] = pending_bill['CanteenCost'] + pending_bill['GameCost']
+                        self.fs_db.update_trans(pending_bill['Id'], pending_bill, audit)
+                    else:
+                        bill_tracker = BillTracker(gt_doc.get('CanteenTrackerId', None), gt_doc.get('Id'), gt_doc.get("GameId"), player_id)
+                        bill_tracker = bill_tracker.dict()
+                        bill_tracker['CanteenCost'] = player['Cost']
+                        if player_id in gt_doc['GamePlayers']:
+                            bill_tracker['GameCost'] = div_game_cost
+                        else:
+                            bill_tracker['GameCost'] = 0
+                        bill_tracker['TotalCost'] = bill_tracker['CanteenCost'] + bill_tracker['GameCost']
+                        bill_tracker['Player'] = player
+                        if bill_tracker['TotalCost'] != 0:
+                            self.fs_db.add_trans(constants.BILL_TRACKER, bill_tracker, audit)
+
+            for player in gt_doc.get('Players',[]):
+                if player['Id'] not in ct_plyr_ids:
+                    # generate bill for all players
+                    # check for pending bill
+                    pending_bills = self.fs_db.check_pending_bill(player['Id'])
+                    count = sum(1 for doc in pending_bills)
+                    print(count)
+                    
+                    if count>0:
+                        pending_bill = pending_bills[0]
+                        if player['Id'] in gt_doc['GamePlayers']:
+                            pending_bill['GameCost'] += div_game_cost
+                        pending_bill['TotalCost'] = pending_bill['CanteenCost'] + pending_bill['GameCost']
+                        self.fs_db.update_trans(pending_bill['Id'], pending_bill, audit)
+                    else:
+                        bill_tracker = BillTracker(gt_doc.get('CanteenTrackerId', None), gt_doc.get('Id'), gt_doc.get("GameId"),player['Id'])
+                        bill_tracker = bill_tracker.dict()
+                        bill_tracker['CanteenCost'] = 0
+                        if player['Id'] in gt_doc['GamePlayers']:
+                            bill_tracker['GameCost'] = div_game_cost
+                        else:
+                            bill_tracker['GameCost'] = 0
+                        bill_tracker['TotalCost'] = bill_tracker['CanteenCost'] + bill_tracker['GameCost']
+                        if bill_tracker['TotalCost'] != 0:
+                            self.fs_db.add_trans(constants.BILL_TRACKER, bill_tracker, audit)
+
+            # update game tracker
+            gt_update = {
+                "isBilled": True
+            }
+            self.fs_db.update_trans(gt_id, gt_update, audit)
+
+            # update canteen tracker 
+            ct_update = {
+                "isActive": False
+            }
+            ct_id = gt_doc.get('CanteenTrackerId', None)
+            if ct_id is not None:
+                self.fs_db.update_trans(gt_doc.get('CanteenTrackerId'), ct_update, audit)
+            return True
+        except Exception as e:
+            print(e)
+            return False
+
+
+
+
+#new
+
     def process_pay_bill(self, bt_id: str, modes: {}, discount, audit: Audit):
         try:
             # if already paid
@@ -199,10 +305,9 @@ class GameService:
                     credit_doc = self.fs_db.get_by_id_trans(credit_id)
                     if not credit_doc:
                         cr = player_doc["Credit"]
-                        credit_doc = Credit(Id=credit_id, PlayerId=player_id, Credit=cr, Debit={util.get_current_tmstmp_str(): amount}).dict()
+                        credit_doc = Credit(Id=credit_id, PlayerId=player_id, Credit=cr).dict()
                         self.fs_db.add_trans_by_id(credit_id, credit_doc, audit)
                     else:
-                        credit_doc["Debit"][util.get_current_tmstmp_str()] = amount
                         credit_doc["Credit"] = new_credit
                         self.fs_db.update_trans(credit_id, credit_doc, audit)
             return True

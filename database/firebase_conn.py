@@ -291,6 +291,34 @@ class FirebaseConn:
         self.audit_log(audit, doc_id, doc.get(constants.TYPE,""), constants.AC_UPDATE, doc_ref.get().to_dict(), doc)
         return True, doc
 
+    def get_by_ids_trans(self, ids, collection_type=None):
+        """
+        Retrieves multiple documents from Firebase using their IDs.
+
+        Args:
+            ids: A set or list of document IDs.
+            collection_type: The type of collection (e.g., constants.PLAYER).  Optional, but helps with error handling.
+
+        Returns:
+            A list of firestore.DocumentSnapshot objects, or None if an error occurs.  Empty list if no documents found.
+        """
+        if not ids:
+            return []  # Return empty list if no IDs provided
+
+        try:
+            # Convert ids to a Firestore array if it's not already one.
+            if not isinstance(ids, list):
+                ids = list(ids)  # Handle sets or other iterables
+
+            docs = self.trans_coll.where("Id","in", ids).stream()
+            return list(docs)
+
+        except Exception as e:
+            print(f"Error fetching documents by IDs: {e}")
+            return None
+
+
+
     def add_game_canteen(self, gt_id: str, doc: dict, audit: Audit):
         gt_doc_ref = self.trans_coll.document(gt_id)
         gt_doc = gt_doc_ref.get().to_dict()
@@ -619,7 +647,7 @@ class FirebaseConn:
             pen_bills.append(bill_doc.to_dict())
         return pen_bills
 
-    def get_all_plyr_bills(self, isPaid):
+    def get_all_plyr_bills2(self, isPaid):
         # add game name
         games = self.get_all(constants.GAME)
         nm_tr_map = {}
@@ -662,6 +690,63 @@ class FirebaseConn:
                 bill_doc['GameTracker'] = None
             plyr_bills["BillTrackers"].append(bill_doc)
         return plyr_bills
+
+    #new
+    def get_all_plyr_bills(self, isPaid):
+        # Fetch all games in a single query
+        games = self.get_all(constants.GAME)
+        game_name_map = {game.to_dict()['Id']: game.to_dict()['Name'] for game in games}
+
+        # Fetch all BillTrackers in a single query
+        query = self.trans_coll.where('Type', '==', constants.BILL_TRACKER).where('isPaid', '==', isPaid)
+        bill_docs = list(query.stream())  # Fetch all documents at once
+
+        # Build a map of Player IDs to Player documents
+        player_ids = {doc.to_dict()['PlayerId'] for doc in bill_docs if doc.to_dict().get('PlayerId')}
+        players = self.get_by_ids_trans(player_ids)
+        player_map = {player.id: player.to_dict() for player in players} if players else {}
+
+
+        # Build a map of CanteenTracker IDs to CanteenTracker documents
+        canteen_tracker_ids = {doc.to_dict()['CanteenTrackerId'] for doc in bill_docs if doc.to_dict().get('CanteenTrackerId')}
+        canteen_trackers = self.get_by_ids_trans(canteen_tracker_ids, collection_type=constants.CANTEEN_TRACKER)
+        canteen_tracker_map = {ct.id: ct.to_dict() for ct in canteen_trackers} if canteen_trackers else {}
+
+        # Build a map of GameTracker IDs to GameTracker documents
+        game_tracker_ids = {doc.to_dict()['GameTrackerId'] for doc in bill_docs if doc.to_dict().get('GameTrackerId')}
+        game_trackers = self.get_by_ids_trans(game_tracker_ids, collection_type=constants.GAME_TRACKER)
+        game_tracker_map = {gt.id: gt.to_dict() for gt in game_trackers} if game_trackers else {}
+
+
+        plyr_bills = {"BillTrackers": []}
+        for bill_doc in bill_docs:
+            bill_data = bill_doc.to_dict()
+            if bill_data.get('GameId'):
+                bill_data['GameName'] = game_name_map.get(bill_data['GameId'])
+
+            player_id = bill_data.get("PlayerId")
+            if player_id:
+                bill_data['Player'] = player_map.get(player_id)
+
+            canteen_tracker_id = bill_data.get('CanteenTrackerId')
+            if canteen_tracker_id:
+                bill_data['CanteenTracker'] = canteen_tracker_map.get(canteen_tracker_id)
+            else:
+                bill_data['CanteenTracker'] = None
+
+            game_tracker_id = bill_data.get('GameTrackerId')
+            if game_tracker_id:
+                bill_data['GameTracker'] = game_tracker_map.get(game_tracker_id)
+            else:
+                bill_data['GameTracker'] = None
+
+            plyr_bills["BillTrackers"].append(bill_data)
+
+        return plyr_bills
+
+
+
+    #new
         
     def trash(self, menu_itms: dict, audit: Audit):
         try:
