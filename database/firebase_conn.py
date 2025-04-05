@@ -317,6 +317,32 @@ class FirebaseConn:
             print(f"Error fetching documents by IDs: {e}")
             return None
 
+    def get_by_ids_target(self, ids, collection_type=None):
+        """
+        Retrieves multiple documents from Firebase using their IDs.
+
+        Args:
+            ids: A set or list of document IDs.
+            collection_type: The type of collection (e.g., constants.PLAYER).  Optional, but helps with error handling.
+
+        Returns:
+            A list of firestore.DocumentSnapshot objects, or None if an error occurs.  Empty list if no documents found.
+        """
+        if not ids:
+            return []  # Return empty list if no IDs provided
+
+        try:
+            # Convert ids to a Firestore array if it's not already one.
+            if not isinstance(ids, list):
+                ids = list(ids)  # Handle sets or other iterables
+
+            docs = self.target_coll.where("Id","in", ids).stream()
+            return list(docs)
+
+        except Exception as e:
+            print(f"Error fetching documents by IDs: {e}")
+            return None
+
 
 
     def add_game_canteen(self, gt_id: str, doc: dict, audit: Audit):
@@ -703,7 +729,7 @@ class FirebaseConn:
 
         # Build a map of Player IDs to Player documents
         player_ids = {doc.to_dict()['PlayerId'] for doc in bill_docs if doc.to_dict().get('PlayerId')}
-        players = self.get_by_ids_trans(player_ids)
+        players = self.get_by_ids_target(player_ids)
         player_map = {player.id: player.to_dict() for player in players} if players else {}
 
 
