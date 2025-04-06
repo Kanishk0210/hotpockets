@@ -733,7 +733,10 @@ async def add_debit(debit_request: dict):
     """Adds a debit entry to a player's credit record."""
     try:
         player_id = debit_request["PlayerId"]
-        amount = debit_request["Amount"]
+        modes = debit_request["Modes"]
+        cash = sum(modes["Cash"])
+        amount = cash + sum(modes["Online"])
+        
         credit_id = constants.CREDIT + "::" + player_id
 
         # Check if a Credit document already exists for this player.  If not, create one.
@@ -741,10 +744,10 @@ async def add_debit(debit_request: dict):
         credit_doc = fs_db.get_by_id_trans(credit_id)
         if not credit_doc:
             cr = player_doc["Credit"]
-            credit_doc = Credit(Id=credit_id, PlayerId=player_id, Credit=cr, Debit={util.get_current_tmstmp_str(): amount}).dict()
+            credit_doc = Credit(Id=credit_id, PlayerId=player_id, Credit=cr, Debit={util.get_current_tmstmp_str(): modes}).dict()
             fs_db.add_trans_by_id(credit_id, credit_doc, audit)
         else:
-            credit_doc["Debit"][util.get_current_tmstmp_str()] = amount
+            credit_doc["Debit"][util.get_current_tmstmp_str()] = modes
 
         # Update the debit dictionary.  Handle potential errors (like invalid amount).
         if amount <= 0:
@@ -758,6 +761,10 @@ async def add_debit(debit_request: dict):
         if player_doc:
             player_update = {"Credit": credit_doc["Credit"]}
             fs_db.update_target(player_id, player_update, audit)
+
+        # Update safe
+        daily_collect.save_cash(cash, audit)
+
         return JSONResponse(content="message: Debit added successfully", status_code=200)
 
     except Exception as e:
