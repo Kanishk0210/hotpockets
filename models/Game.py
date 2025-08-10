@@ -14,3 +14,4 @@ class Game(BaseModel):
     CancelTime: Union[float, int] # mins
     XPlayerCharge: Union[float, int]
     Image: str = None
+    GpioNo: str = None

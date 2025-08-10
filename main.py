@@ -3,9 +3,12 @@ import random
 import string
 import base64
 from datetime import datetime
+from collections import defaultdict
 # import ngrok
 
-from fastapi import FastAPI, APIRouter, Body, Depends
+from fastapi import FastAPI, APIRouter, Body, Depends, HTTPException
+from google.cloud.firestore_v1.base_query import FieldFilter
+from typing import Optional
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.cors import CORSMiddleware
@@ -240,8 +243,8 @@ def add_raw(rawMtrl: RawMtrl):
     return JSONResponse(content=doc, status_code=201)
 
 @app.put("/rawMtrl/update/{doc_id}", dependencies=[Depends(JWTBearer())])
-def update_raw(doc_id: str, doc: dict):
-    isUpdated = fs_db.update_rawmtrl(doc_id, doc, audit)
+def update_raw(doc_id: str, req: dict):
+    isUpdated = fs_db.update_rawmtrl(doc_id, req, audit)
     if not isUpdated:
         JSONResponse(content='Failed to Update.', status_code=500)
     return JSONResponse(content='Successfully Updated.', status_code=200)
@@ -643,6 +646,7 @@ def get_game_all_pending_bills():
         bt_docs_res = {'PendingBillTrackers':[]}
         for bt_doc in bt_docs:
             bt_docs_res['PendingBillTrackers'].append(bt_doc.to_dict())
+        print(bt_docs_res)
     except Exception as e:
         print(e)
     return JSONResponse(content=bt_docs_res, status_code=200)
@@ -772,6 +776,275 @@ async def add_debit(debit_request: dict):
         return JSONResponse(content="Error adding debit", status_code=500)
 
 
+@app.get("/ip", dependencies=[Depends(JWTBearer())])
+def get_ip():
+
+    doc = fs_db.get_ip()
+
+    return JSONResponse(content=doc, status_code=200)
+
+
+
+@app.get("/game/bills/paid/filter", dependencies=[Depends(JWTBearer())])
+def get_game_paid_bills_filter(startDate, endDate, Pmode = None):
+    """
+    Retrieves paid bills within a specified date range and optionally filters by payment mode.
+
+    Args:
+        startDate (str): Start date for filtering (YYYY-MM-DD HH:MM:SS).
+        endDate (str): End date for filtering (YYYY-MM-DD HH:MM:SS).
+        Pmode (Optional[str], optional): Payment mode to filter by (online, cash, credit). Defaults to None.
+
+    Returns:
+        JSONResponse: A list of paid bills matching the criteria.
+    """
+    try:
+        # startDate = params["startDate"]
+        # endDate = params["endDate"]
+        # Pmode = params["Pmode"]
+        # Convert date strings to datetime objects
+        start_time = datetime.strptime(startDate, "%Y-%m-%d %H:%M:%S")
+        end_time = datetime.strptime(endDate, "%Y-%m-%d %H:%M:%S")
+
+        # Construct the base query
+        query = fs_db.trans_coll.where('Type', '==', constants.BILL_TRACKER).where('isPaid', '==', True)
+
+        # Add date range filters
+        query = query.where('MdfdTmStmp', '>=', startDate).where('MdfdTmStmp', '<=', endDate)
+
+        # Add payment mode filter, if provided
+        if Pmode:
+            if Pmode.lower() not in ['online', 'cash', 'credit']:
+                raise HTTPException(status_code=400, detail="Invalid payment mode.  Must be 'online', 'cash', or 'credit'.")
+            query = query.where(f'Mode.{Pmode.capitalize()}', '!=', [])  # Assuming Mode is a dictionary with payment types
+
+        # Execute the query
+        bill_docs = list(query.stream())
+
+        # Enrich bill documents
+        games = fs_db.get_all(constants.GAME)
+        game_name_map = {game.to_dict()['Id']: game.to_dict()['Name'] for game in games}
+
+        bill_dicts = [doc.to_dict() for doc in bill_docs]
+
+        player_ids = {doc.get('PlayerId') for doc in bill_dicts if doc.get('PlayerId')}
+        players = fs_db.get_by_ids_target(list(player_ids))
+        player_map = {player.id: player.to_dict() for player in players} if players else {}
+
+        canteen_tracker_ids = {doc.get('CanteenTrackerId') for doc in bill_dicts if doc.get('CanteenTrackerId')}
+        canteen_trackers = fs_db.get_by_ids_trans(list(canteen_tracker_ids))
+        canteen_tracker_map = {ct.id: ct.to_dict() for ct in canteen_trackers} if canteen_trackers else {}
+
+        game_tracker_ids = {doc.get('GameTrackerId') for doc in bill_dicts if doc.get('GameTrackerId')}
+        game_trackers = fs_db.get_by_ids_trans(list(game_tracker_ids))
+        game_tracker_map = {gt.id: gt.to_dict() for gt in game_trackers} if game_trackers else {}
+
+        enriched_bills = []
+        for bill_data in bill_dicts:
+            if bill_data.get('GameId'):
+                bill_data['GameName'] = game_name_map.get(bill_data['GameId'])
+
+            player_id = bill_data.get("PlayerId")
+            if player_id:
+                bill_data['Player'] = player_map.get(player_id)
+
+            bill_data['CanteenTracker'] = canteen_tracker_map.get(bill_data.get('CanteenTrackerId'))
+            bill_data['GameTracker'] = game_tracker_map.get(bill_data.get('GameTrackerId'))
+
+            enriched_bills.append(bill_data)
+
+        return JSONResponse(content={"BillTrackers": enriched_bills}, status_code=200)
+
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format.  Use YYYY-MM-DD HH:MM:SS.")
+    except Exception as e:
+        print(f"An error occurred: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error during bill retrieval.")
+
+
+# Assuming you have initialized FirebaseConn and have access to it
+# Also assuming you have necessary models and utility functions
+
+@app.get("/stock/history", dependencies=[Depends(JWTBearer())])
+async def get_stock_history(request: Request, startDate: str, endDate: str):
+    """
+    Retrieves audit logs related to stock (RawMtrl) updates within a specified date range.
+
+    Args:
+        request (Request): The incoming request object.
+        startDate (str): Start date for filtering (YYYY-MM-DD HH:MM:SS).
+        endDate (str): End date for filtering (YYYY-MM-DD HH:MM:SS).
+
+    Returns:
+        JSONResponse: A list of audit logs matching the criteria.
+    """
+    try:
+        # Extract branch from the JWT token
+        auth_header = request.headers.get("authorization", "")
+        _, token = auth_header.split(" ")  # Assuming "Bearer <token>" format
+        decoded_token = decodeJWT(token)
+        branch = decoded_token.get("branch", "")
+
+        # Initialize Firebase connection with branch
+        fs_db = FirebaseConn(branch)
+
+        # Convert date strings to datetime objects
+        start_time = datetime.strptime(startDate, "%Y-%m-%d %H:%M:%S")
+        end_time = datetime.strptime(endDate, "%Y-%m-%d %H:%M:%S")
+
+        # Construct the query
+        query = fs_db.store.collection("audit-logs").where(
+            filter=FieldFilter("Branch", "==", branch)
+        ).where(
+            filter=FieldFilter("Type", "==", "Audit")
+        ).where(
+            filter=FieldFilter("Action", "==", "Update")
+        ).where(
+            filter=FieldFilter("DocType", "==", "RawMtrl")
+        ).where(
+            filter=FieldFilter("CreatedTmStmp", ">=", startDate)
+        ).where(
+            filter=FieldFilter("CreatedTmStmp", "<=", endDate)
+        )
+
+        # Execute the query
+        audit_docs = query.stream()
+
+        # Convert the results to a list of dictionaries
+        audit_logs = [doc.to_dict() for doc in audit_docs]
+
+        return JSONResponse(content={"audit_logs": audit_logs}, status_code=200)
+
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD HH:MM:SS.")
+    except Exception as e:
+        print(f"An error occurred: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error during audit log retrieval.")
+
+@app.get("/bill/summary_all", dependencies=[Depends(JWTBearer())], tags=["bill"])
+async def get_bill_summary_all(request: Request, startDate: Optional[str] = None, endDate: Optional[str] = None):
+    """
+    Retrieves a summary of total cash, online, and credit collections from all BillTracker documents.
+    Can be filtered by a date range.
+
+    Args:
+        request (Request): The incoming request object.
+        startDate (Optional[str], optional): Start date for filtering (YYYY-MM-DD HH:MM:SS). Defaults to None.
+        endDate (Optional[str], optional): End date for filtering (YYYY-MM-DD HH:MM:SS). Defaults to None.
+
+    Returns:
+        JSONResponse: A dictionary containing total cash, online, and credit collections.  Returns an error if there's a server error.
+    """
+    try:
+        # Extract branch from the JWT token.  This assumes your JWT handling is set up correctly.
+        auth_header = request.headers.get("authorization", "")
+        _, token = auth_header.split(" ")  # Assuming "Bearer <token>" format
+        decoded_token = decodeJWT(token)
+        branch = decoded_token.get("branch", "")
+
+        # Initialize Firebase connection with branch.
+        fs_db = FirebaseConn(branch)
+
+        # Base query for BillTracker documents.
+        query = fs_db.trans_coll.where('Type', '==', constants.BILL_TRACKER)
+
+        # Add date range filters if both startDate and endDate are provided.
+        if startDate and endDate:
+            try:
+                # Validate date format
+                datetime.strptime(startDate, "%Y-%m-%d %H:%M:%S")
+                datetime.strptime(endDate, "%Y-%m-%d %H:%M:%S")
+                query = query.where('CreatedTmStmp', '>=', startDate).where('CreatedTmStmp', '<=', endDate).where('isPaid','==',True)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD HH:MM:SS.")
+
+        bill_docs_stream = query.stream()
+        bill_docs = []
+        if bill_docs_stream is not None:
+            bill_docs = [doc.to_dict() for doc in bill_docs_stream]
+        total_cash = 0
+        total_online = 0
+        total_credit = 0
+
+        if len(bill_docs) != 0:
+            # Aggregate collections.  Handles cases where "Mode" or payment types might be missing.
+            total_cash = sum(sum(doc.get("Mode", {}).get("Cash", [])) for doc in bill_docs)
+            total_online = sum(sum(doc.get("Mode", {}).get("Online", [])) for doc in bill_docs)
+            total_credit = sum(sum(doc.get("Mode", {}).get("Credit", [])) for doc in bill_docs)
+
+        return {
+            "total_cash": total_cash,
+            "total_online": total_online,
+            "total_credit": total_credit,
+        }
+        
+
+    except Exception as e:
+        print(f"Error fetching bill summary: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error.")
+
+@app.get("/game/not_active_timeframes", dependencies=[Depends(JWTBearer())])
+def get_game_not_active_timeframes(startDate: str, endDate: str):
+    """
+    Retrieves all GameTracker documents within a specified date range,
+    groups them by GameId, calculates the not-active timeframes for each game,
+    and returns a dictionary of games with their corresponding not-active timeframes.
+    """
+    try:
+        # Convert date strings to datetime objects
+        start_time = datetime.strptime(startDate, "%Y-%m-%d %H:%M:%S")
+        end_time = datetime.strptime(endDate, "%Y-%m-%d %H:%M:%S")
+
+        # Query all GameTracker docs in the given date range
+        gt_docs = fs_db.trans_coll.where('Type', '==', 'GameTracker').where('CreatedTmStmp', '>=', startDate).where('CreatedTmStmp', '<=', endDate).stream()
+
+        # Group documents by GameId
+        grouped_games = defaultdict(list)
+        for doc in gt_docs:
+            data = doc.to_dict()
+            game_id = data.get("GameId")
+            if game_id:
+                grouped_games[game_id].append(data)
+
+        game_not_active_times = []
+
+        # Process each game group
+        for game_id, trackers in grouped_games.items():
+            # Sort trackers by Start Time
+            trackers.sort(key=lambda x: x.get("StrtTmStmp"))
+
+            # Retrieve game name
+            game_doc = fs_db.get_by_id(game_id)
+            game_name = game_doc.get("Name") if game_doc else "Unknown"
+
+            timeframes = []
+
+            # Find not-active time gaps between consecutive sessions
+            for i in range(len(trackers) - 1):
+                current_end = trackers[i].get("EndTmStmp")
+                next_start = trackers[i + 1].get("StrtTmStmp")
+
+                if current_end and next_start:
+                    timeframes.append({
+                        "start": current_end.split(" ")[1],
+                        "end": next_start.split(" ")[1]
+                    })
+
+            if timeframes:
+                game_not_active_times.append({
+                    "GameName": game_name,
+                    "GameId": game_id,
+                    "GameTimeframes": timeframes
+                })
+
+        return JSONResponse(content=game_not_active_times, status_code=200)
+
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD HH:MM:SS.")
+    except Exception as e:
+        print(e)
+        raise HTTPException(status_code=500, detail="Internal server error during calculation.")
+
 # @app.exception_handler(ValidationError)
 # def validation_exception_handler(request: Request, exc: ValidationError):
 #     return JSONResponse(status_code=422, content={'detail':'Validation Failed.','Validation Errors': exc.errors()})
@@ -785,4 +1058,3 @@ if __name__ == "__main__":
 #     # print(listener.url())
 #     # uvicorn.run("main:app", host=listener.url(), reload= True)
     uvicorn.run("main:app", port=8000, reload= True)
-

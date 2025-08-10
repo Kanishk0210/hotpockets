@@ -357,7 +357,7 @@ class GameService:
             game_cost = round(game_cost)
 
             isCancelled = False
-            if dur<=game_doc.get('CancelTime', 0):
+            if dur<=game_doc.get('CancelTime', 0) and gt_doc.get('CanteenTrackerId') is None:
                 isCancelled = True
 
             # update game tracker end tmstmp, dur, bill

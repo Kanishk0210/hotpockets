@@ -141,6 +141,9 @@ class FirebaseConn:
     def get_safe(self):
         return self.source_coll.document(constants.SAFE_ID).get().to_dict()
 
+    def get_ip(self):
+        return self.source_coll.document("ip").get().to_dict()
+
     def update_safe(self, doc_id: str, doc: dict, audit: Audit):
         doc_ref = self.source_coll.document(doc_id)
         self.audit_log(audit, doc_id, doc.get("Type",""), constants.AC_UPDATE, doc_ref.get().to_dict(), doc)
@@ -215,12 +218,18 @@ class FirebaseConn:
         doc_ref.update(doc)
         return True
 
-    def update_rawmtrl(self, doc_id: str, doc: dict, audit: Audit):
+    def update_rawmtrl(self, doc_id: str, req: dict, audit: Audit):
         doc_ref = self.target_coll.document(doc_id)
         ex_doc = doc_ref.get().to_dict()
         ex_doc[constants.MDFDTMSTMP] = util.get_current_tmstmp_str()
-        ex_doc["QuantityBox"] = ex_doc["QuantityBox"] + doc["QuantityBox"]
-        ex_doc["Quantity"] = ex_doc["Quantity"] + doc["QuantityBox"]*ex_doc["QuantityPerBox"]
+
+        if req["type"] == "box":
+            ex_doc["QuantityBox"] = ex_doc["QuantityBox"] + req["value"]
+            ex_doc["Quantity"] = ex_doc["Quantity"] + req["value"]*ex_doc["QuantityPerBox"]
+        elif req["type"] == "quantity":
+            ex_doc["Quantity"] = ex_doc["Quantity"] + req["value"]
+            ex_doc["QuantityBox"] = ex_doc["QuantityBox"] + req["value"]/ex_doc["QuantityPerBox"]
+            
         self.audit_log(audit, doc_id, ex_doc.get("Type",""), constants.AC_UPDATE, doc_ref.get().to_dict(), ex_doc)
         doc_ref.update(ex_doc)
         return True
@@ -618,7 +627,7 @@ class FirebaseConn:
         return query.stream()
 
     def get_all_pending_bills(self, typ: str):
-        query = self.trans_coll.where('Type','==',typ).where('isPaid','==',False)
+        query = self.trans_coll.where('Type','==',typ).where('isPaid','==',False).order_by('MdfdTmStmp', direction=firestore.Query.DESCENDING)
         return query.stream()
 
     def get_all_paid_bills(self, typ: str):
@@ -652,7 +661,7 @@ class FirebaseConn:
             game_dict = game.to_dict()
             nm_tr_map[game_dict['Id']] = game_dict['Name']
         
-        query = self.trans_coll.where('Type','==',constants.GAME_TRACKER).where('isActive','==',False).where('isBilled','==',False).where('isCancelled','==',False)
+        query = self.trans_coll.where('Type','==',constants.GAME_TRACKER).where('isActive','==',False).where('isBilled','==',False).where('isCancelled','==',False).order_by('EndTmStmp', direction=firestore.Query.DESCENDING)
         bills = {'ClosedNotBilledGames':[]}
         for bill in query.stream():
             bill_doc = bill.to_dict()
