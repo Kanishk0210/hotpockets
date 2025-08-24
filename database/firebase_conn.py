@@ -355,97 +355,106 @@ class FirebaseConn:
 
 
     def add_game_canteen(self, gt_id: str, doc: dict, audit: Audit):
-        gt_doc_ref = self.trans_coll.document(gt_id)
-        gt_doc = gt_doc_ref.get().to_dict()
-        isNew = False
-        if gt_doc["CanteenTrackerId"] == None:
-            gt_doc["CanteenTrackerId"] = constants.CANTEEN_TRACKER +'::'+str(self.get_next_id(constants.CANTEEN_TRACKER))
-            ex_ct_doc = {
-                constants.MDFDTMSTMP: util.get_current_tmstmp_str(),
-                constants.CREATEDTMSTMP: util.get_current_tmstmp_str(),
-                constants.ID: gt_doc["CanteenTrackerId"],
-                "Type": constants.CANTEEN_TRACKER,
-                "GameId": gt_doc["GameId"],
-                "GameTrackerId": gt_id,
-                "TxId": None,
-                "isActive": True,
-                "isBilled": False,
-                "isCancelled": False,
-                "MenuItems": [],
-                "Players": [],
-                "Cost": 0
-            }
-            isNew = True
-        else:
-            ex_ct_doc_ref = self.trans_coll.document(gt_doc["CanteenTrackerId"])
-            ex_ct_doc = ex_ct_doc_ref.get().to_dict()
-            ex_ct_doc_audit = ex_ct_doc_ref.get().to_dict()
+        def update_stock_batch(menu_items, transaction):
+            for mitem in menu_items:
+                menu_item_ref = self.target_coll.document(mitem["Id"])
+                menu_item_doc = menu_item_ref.get(transaction=transaction).to_dict()
+                if menu_item_doc:
+                    menu_item_doc["Remaining"] = menu_item_doc.get("Remaining", 0) - mitem["Quan"]
+                    transaction.update(menu_item_ref, menu_item_doc)
 
-        if doc["PlayerId"] == None:
-            for mitem_to_add in doc["MenuItems"]:
-                found = False
-                for mitem in ex_ct_doc["MenuItems"]:
-                    if mitem["Id"] == mitem_to_add["Id"]:
-                        mitem["Quan"] += mitem_to_add["Quan"]
-                        ex_ct_doc["Cost"] += mitem_to_add["Cost"] * mitem_to_add["Quan"]
-                        found = True
-                        break
-                if not found:
-                    mitem_to_add_doc = self.get_by_id(mitem_to_add["Id"])
-                    mitem_to_add["Cost"] = mitem_to_add_doc["Price"]
-                    mitem_to_add["Name"] = mitem_to_add_doc["Name"]
-                    ex_ct_doc["Cost"] += mitem_to_add["Cost"] * mitem_to_add["Quan"]
-                    ex_ct_doc["MenuItems"].append(mitem_to_add)
-        else:
-            plyrFound = False
-            player = {}
-            for plyr in ex_ct_doc["Players"]:
-                if plyr["Id"] == doc["PlayerId"]:
-                    plyrFound = True
-                    player = plyr
+        # Use transaction to ensure data consistency
+        transaction = self.store.transaction()
+        try:
+            # Get game tracker document in transaction
+            gt_doc_ref = self.trans_coll.document(gt_id)
+            gt_doc = gt_doc_ref.get(transaction=transaction).to_dict()
+            isNew = False
+
+            # Batch get all menu items at once
+            menu_items = MenuItem.collection.filter("id", "in", [item["Id"] for item in doc["MenuItems"]]).fetch()
+            menu_items_map = {item.id: item for item in menu_items}
+
+            if gt_doc["CanteenTrackerId"] is None:
+                # Create new canteen tracker
+                new_id = constants.CANTEEN_TRACKER +'::'+str(self.get_next_id(constants.CANTEEN_TRACKER))
+                canteen_tracker = CanteenTracker()
+                canteen_tracker.id = new_id
+                canteen_tracker.modified_timestamp = util.get_current_tmstmp_str()
+                canteen_tracker.created_timestamp = util.get_current_tmstmp_str()
+                canteen_tracker.type = constants.CANTEEN_TRACKER
+                canteen_tracker.game_id = gt_doc["GameId"]
+                canteen_tracker.game_tracker_id = gt_id
+                canteen_tracker.tx_id = None
+                canteen_tracker.menu_items = []
+                canteen_tracker.players = []
+                isNew = True
+            else:
+                # Get existing canteen tracker
+                canteen_tracker = CanteenTracker.collection.get(gt_doc["CanteenTrackerId"])
+                if not canteen_tracker:
+                    raise ValueError(f"Canteen tracker not found: {gt_doc['CanteenTrackerId']}")
+
+            # Process menu items based on PlayerId
+            if doc["PlayerId"] == None:
+                # Handle menu items for non-player orders
+                canteen_tracker.menu_items = []
+                canteen_tracker.cost = 0
+                
+                for mitem_to_add in doc["MenuItems"]:
+                    menu_item_doc = menu_items_map.get(mitem_to_add["Id"])
+                    if menu_item_doc:
+                        mitem_to_add["Cost"] = menu_item_doc.price
+                        mitem_to_add["Name"] = menu_item_doc.name
+                        canteen_tracker.cost += mitem_to_add["Cost"] * mitem_to_add["Quan"]
+                        canteen_tracker.menu_items.append(mitem_to_add)
+                        
+                        # Update stock in transaction
+                        update_stock_batch([mitem_to_add], transaction)
+            else:
+                # Handle menu items for player orders
+                player = next((p for p in canteen_tracker.players if p["Id"] == doc["PlayerId"]), None)
+                if not player:
+                    player_doc = self.get_by_id(doc["PlayerId"])
+                    player = {
+                        "Id": player_doc["Id"],
+                        "Name": player_doc["Name"],
+                        "MenuItems": [],
+                        "Cost": 0
+                    }
+                    canteen_tracker.players.append(player)
+
+                for mitem_to_add in doc["MenuItems"]:
+                    menu_item_doc = menu_items_map.get(mitem_to_add["Id"])
+                    if menu_item_doc:
+                        mitem_to_add["Cost"] = menu_item_doc.price
+                        mitem_to_add["Name"] = menu_item_doc.name
+                        cost_to_add = mitem_to_add["Cost"] * mitem_to_add["Quan"]
+                        player["MenuItems"].append(mitem_to_add)
+                        player["Cost"] += cost_to_add
+                        canteen_tracker.cost += cost_to_add
+                        
+                        # Update stock in transaction
+                        update_stock_batch([mitem_to_add], transaction)
+
+            # Save changes in transaction
+            if isNew:
+                canteen_tracker_ref = self.trans_coll.document(canteen_tracker.id)
+                transaction.set(canteen_tracker_ref, canteen_tracker.to_dict())
+                transaction.update(gt_doc_ref, {"CanteenTrackerId": canteen_tracker.id})
+                self.audit_log(audit, canteen_tracker.id, constants.CANTEEN_TRACKER, constants.AC_ADD, None, canteen_tracker.to_dict())
+            else:
+                canteen_tracker_ref = self.trans_coll.document(canteen_tracker.id)
+                transaction.update(canteen_tracker_ref, canteen_tracker.to_dict())
+                self.audit_log(audit, canteen_tracker.id, constants.CANTEEN_TRACKER, constants.AC_UPDATE, canteen_tracker_ref.get(transaction=transaction).to_dict(), canteen_tracker.to_dict())
+
+            transaction.commit()
+            return True, canteen_tracker.to_dict()
             
-            if not plyrFound:
-                plyr_doc = self.get_by_id(doc["PlayerId"])
-                player = {
-                    "Id": plyr_doc["Id"],
-                    "Name": plyr_doc["Name"],
-                    "MenuItems": [],
-                    "Cost": 0
-                }
-
-            for mitem_to_add in doc["MenuItems"]:
-                found = False
-                for mitem in player["MenuItems"]:
-                    if mitem["Id"] == mitem_to_add["Id"]:
-                        mitem["Quan"] += mitem_to_add["Quan"]
-                        player["Cost"] += mitem["Cost"] * mitem_to_add["Quan"]
-                        ex_ct_doc["Cost"] += mitem["Cost"] * mitem_to_add["Quan"]
-                        found = True
-                        break
-                if not found:
-                    mitem_to_add_doc = self.get_by_id(mitem_to_add["Id"])
-                    mitem_to_add["Cost"] = mitem_to_add_doc["Price"]
-                    mitem_to_add["Name"] = mitem_to_add_doc["Name"]
-                    player["MenuItems"].append(mitem_to_add)
-                    player["Cost"] += mitem_to_add["Cost"] * mitem_to_add["Quan"]
-                    ex_ct_doc["Cost"] += mitem_to_add["Cost"] * mitem_to_add["Quan"]
-            
-            if not plyrFound:
-                ex_ct_doc["Players"].append(player)
-
-        if isNew:
-            self.trans_coll.add(ex_ct_doc, ex_ct_doc["Id"])
-            self.audit_log(audit, ex_ct_doc["Id"], ex_ct_doc["Type"], constants.AC_ADD, None, ex_ct_doc)
-        else:
-            ex_ct_doc_ref.update(ex_ct_doc)
-            self.audit_log(audit, ex_ct_doc["Id"], ex_ct_doc.get(constants.TYPE,""), constants.AC_UPDATE, ex_ct_doc_audit, ex_ct_doc)
-        
-        gt_doc["CanteenTrackerId"] = ex_ct_doc["Id"]
-        self.audit_log(audit, gt_doc["Id"], gt_doc.get(constants.TYPE,""), constants.AC_UPDATE, gt_doc_ref.get().to_dict(), gt_doc)
-        gt_doc_ref.update(gt_doc)
-
-        self.update_stock(doc, audit)
-        return True, ex_ct_doc
+        except Exception as e:
+            print(f"Error in add_game_canteen: {e}")
+            # Transaction automatically rolls back on exception
+            return False, None
 
     def add_ind_canteen(self, doc: dict, audit: Audit):
         isNew = False

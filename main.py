@@ -53,7 +53,7 @@ class BranchMiddleware(BaseHTTPMiddleware):
         global game
         global daily_collect
         global audit
-        if request.url.path == "/user/login" or request.url.path == "/docs":
+        if request.url.path == "/user/login" or request.url.path == "/docs" or request.url.path == "/":
             fs_db = FirebaseConn("")
             return await call_next(request)
         b,token = request.headers.get("authorization","").split(" ")
