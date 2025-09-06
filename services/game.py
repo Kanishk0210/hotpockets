@@ -3,6 +3,7 @@ from models.GameTracker import GameTrackerEndRequest
 from models.BillTracker import BillTracker, Mode
 from models.Audit import Audit
 from models.Credit import Credit
+from google.cloud import firestore
 from util import util, constants
 from services.daily_collect import DailyCollectService
 from google.cloud.firestore_v1.base_query import FieldFilter
@@ -170,7 +171,9 @@ class GameService:
 #new
     def process_generate_bill(self, gt_id: str, audit: Audit):
         """Generate bills for game and canteen with transaction safety"""
+        
         def transaction_operation(transaction):
+            """Inner function to execute within transaction"""
             # Fetch game tracker within transaction
             gt_ref = self.fs_db.trans_coll.document(gt_id)
             gt_doc = gt_ref.get(transaction=transaction).to_dict()
@@ -308,122 +311,132 @@ class GameService:
 #new
 
     def process_pay_bill(self, bt_id: str, modes: dict = None, discount=0, audit: Audit = None):
-        """Process bill payment with transaction safety"""
+        """Process bill payment with optimized transaction handling"""
         try:
-            # Validate bt_id
-            if not bt_id or bt_id == "null" or bt_id.lower() == "null":
-                print(f"Invalid bill tracker ID provided: {bt_id}")
-                return False
-                
-            if not audit:
-                print("Audit parameter is required")
+            if not bt_id or bt_id == "null" or bt_id.lower() == "null" or not audit:
+                print(f"Invalid parameters: bt_id={bt_id}, audit={'missing' if not audit else 'present'}")
                 return False
 
-            # Print debug info
-            print(f"Processing bill payment for ID: {bt_id}")
-            print(f"Payment modes: {modes}")
-            print(f"Discount: {discount}")
-
-            # Initialize modes if None
+            # Pre-calculate values to avoid repeated calculations in transaction
             modes = modes or {}
-            
-            def transaction_operation(transaction):
-                # Fetch bill tracker within transaction
-                try:
-                    bt_ref = self.fs_db.trans_coll.document(bt_id)
-                    bt_snapshot = bt_ref.get(transaction=transaction)
-                    if not bt_snapshot.exists:
-                        print(f"Bill tracker document does not exist: {bt_id}")
-                        return False
-                        
-                    bt_doc = bt_snapshot.to_dict()
-                    if not bt_doc:
-                        print(f"Bill tracker document is empty: {bt_id}")
-                        return False
-                        
-                    print(f"Successfully fetched bill tracker: {bt_id}")
-                    print(f"Document data: {bt_doc}")
-                except Exception as e:
-                    print(f"Error fetching bill tracker {bt_id}: {str(e)}")
-                    return False
-                
-                # Early return if already paid
-                if bt_doc.get("isPaid", False):
-                    return True
+            credit_list = modes.get("Credit", [])
+            credit_amount = sum(credit_list) if credit_list and isinstance(credit_list, list) else 0
+            cash_list = modes.get("Cash", [])
+            cash_amount = sum(cash_list) if cash_list and isinstance(cash_list, list) else 0
 
-                # Update bill tracker with payment info
+            # Prepare updates for batch processing
+            def transaction_operation(transaction):
+                # First, read all documents we'll need
+                bt_ref = self.fs_db.trans_coll.document(bt_id)
+                bt_snapshot = bt_ref.get(transaction=transaction)
+                if not bt_snapshot.exists:
+                    print(f"Bill tracker not found: {bt_id}")
+                    return False, []
+                    
+                bt_doc = bt_snapshot.to_dict()
+                if bt_doc.get("isPaid", False):
+                    return True, []
+
+                updates = []  # Track all document updates for audit
+                
+                # Gather all documents needed for credit operation if applicable
+                player_doc = None
+                credit_doc = None
+                player_ref = None
+                credit_ref = None
+                
+                if credit_amount > 0:
+                    player_id = bt_doc.get("PlayerId")
+                    if not player_id:
+                        print("Player ID missing in bill tracker")
+                        return False, []
+
+                    # Read all needed documents first
+                    player_ref = self.fs_db.target_coll.document(player_id)
+                    credit_ref = self.fs_db.trans_coll.document(f"{constants.CREDIT}::{player_id}")
+                    
+                    player_snapshot = player_ref.get(transaction=transaction)
+                    if not player_snapshot.exists:
+                        print(f"Player not found: {player_id}")
+                        return False, []
+                    player_doc = player_snapshot.to_dict()
+                    
+                    credit_snap = credit_ref.get(transaction=transaction)
+                    credit_doc = credit_snap.to_dict() if credit_snap.exists else None
+
+                # Now that we have all documents, start preparing updates
+                # 1. Bill tracker update
                 bt_update = {
                     "isPaid": True,
                     "Mode": modes,
-                    "Discount": discount or 0
+                    "Discount": discount or 0,
+                    constants.MDFDTMSTMP: util.get_current_tmstmp_str()
                 }
+                updates.append(("bill", bt_id, bt_doc.copy(), bt_update))
                 transaction.update(bt_ref, bt_update)
-                self.fs_db.audit_log(audit, bt_id, constants.BILL_TRACKER, 
-                                   constants.AC_UPDATE, bt_doc, bt_update)
 
-                # Handle credit if it exists
-                credit_list = modes.get("Credit", [])
-                if credit_list and isinstance(credit_list, list) and sum(credit_list) > 0:
-                    credit_amount = sum(credit_list)
-                    player_id = bt_doc.get("PlayerId")
+                # 2. Handle credit updates if needed
+                if credit_amount > 0 and player_doc:
+                    current_credit = player_doc.get("Credit", 0)
+                    new_credit = current_credit + credit_amount
                     
-                    if not player_id:
-                        print("Player ID not found in bill tracker")
-                        return False
-                    
-                    # Get player document within transaction
-                    player_ref = self.fs_db.target_coll.document(player_id)
-                    player_doc = player_ref.get(transaction=transaction).to_dict()
-                    
-                    if player_doc:
-                        # Update player's credit
-                        current_credit = player_doc.get("Credit", 0)
-                        new_credit = current_credit + credit_amount
-                        player_update = {"Credit": new_credit}
-                        
-                        transaction.update(player_ref, player_update)
-                        self.fs_db.audit_log(audit, player_id, "Player", 
-                                           constants.AC_UPDATE, player_doc, player_update)
+                    # Player update
+                    player_update = {
+                        "Credit": new_credit,
+                        constants.MDFDTMSTMP: util.get_current_tmstmp_str()
+                    }
+                    updates.append(("player", player_doc.get("Id"), player_doc.copy(), player_update))
+                    transaction.update(player_ref, player_update)
 
-                        # Handle credit document
-                        credit_id = f"{constants.CREDIT}::{player_id}"
-                        credit_ref = self.fs_db.trans_coll.document(credit_id)
-                        credit_doc = credit_ref.get(transaction=transaction).to_dict()
+                    # Credit document update
+                    if credit_doc:
+                        credit_update = {
+                            "Credit": new_credit,
+                            constants.MDFDTMSTMP: util.get_current_tmstmp_str()
+                        }
+                        transaction.update(credit_ref, credit_update)
+                        updates.append(("credit", credit_ref.id, credit_doc, credit_update))
+                    else:
+                        credit_new = Credit(
+                            Id=credit_ref.id,
+                            PlayerId=player_doc.get("Id"),
+                            Credit=new_credit
+                        ).dict()
+                        transaction.set(credit_ref, credit_new)
+                        updates.append(("credit", credit_ref.id, None, credit_new))
 
-                        if not credit_doc:
-                            # Create new credit document
-                            credit_doc = Credit(
-                                Id=credit_id, 
-                                PlayerId=player_id, 
-                                Credit=new_credit
-                            ).dict()
-                            transaction.set(credit_ref, credit_doc)
-                            self.fs_db.audit_log(audit, credit_id, constants.CREDIT, 
-                                               constants.AC_ADD, None, credit_doc)
-                        else:
-                            # Update existing credit document
-                            credit_doc["Credit"] = new_credit
-                            transaction.update(credit_ref, credit_doc)
-                            self.fs_db.audit_log(audit, credit_id, constants.CREDIT, 
-                                               constants.AC_UPDATE, credit_doc, {"Credit": new_credit})
+                return True, updates
+
+            try:
+                # Create and execute transaction
+                transaction = self.fs_db.store.transaction()
+                success, updates = transaction.run(transaction_operation)
                 
-                return True
-
-            # Run the transaction
-            result = self.fs_db.run_transaction(transaction_operation)
-            
-            # Handle cash separately after transaction success since it's a different service
-            if result and isinstance(modes.get("Cash"), list) and modes["Cash"]:
-                try:
-                    cash_amount = sum(modes["Cash"])
-                    if cash_amount > 0:
+                # Process audit logs outside of transaction
+                if success and updates:
+                    for update_type, doc_id, old_data, new_data in updates:
+                        collection_type = {
+                            "bill": constants.BILL_TRACKER,
+                            "player": "Player",
+                            "credit": constants.CREDIT
+                        }.get(update_type)
+                        self.fs_db.audit_log(
+                            audit, doc_id, collection_type,
+                            constants.AC_UPDATE if old_data else constants.AC_ADD,
+                            old_data, new_data
+                        )
+                
+                # Handle cash separately (can't be in transaction as it's a different service)
+                if success and cash_amount > 0:
+                    try:
                         self.daily_collect.save_cash(cash_amount, audit)
-                except Exception as cash_error:
-                    print(f"Error processing cash payment: {cash_error}")
-                    # Don't fail the whole operation if cash processing fails
-                    # The transaction was successful, and this is a separate operation
-                
-            return result if result is not None else True
+                    except Exception as cash_error:
+                        print(f"Cash processing error (payment still valid): {cash_error}")
+
+                return success
+            except Exception as e:
+                print(f"Error in transaction execution: {e}")
+                return False
             
         except Exception as e:
             print(f"Error in process_pay_bill: {e}")
